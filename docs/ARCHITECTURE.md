@@ -108,7 +108,7 @@ entries (
   photo_path null, ai_confidence null, note
 )
 
-profile (owner_id, sex, birth_date, height_cm, activity, timezone,
+profiles (owner_id, sex, birth_year, height_cm, activity, timezone,
          onboarded_at)
 goals (owner_id, kind,           -- 'lose' | 'maintain' | 'gain'
        rate_kg_per_week,         -- 0.25 | 0.5 | 0.75 для lose/gain
