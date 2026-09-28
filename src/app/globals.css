@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/* Дизайн-токены со скриншота недельного разбора — docs/ARCHITECTURE.md §8 */
+@theme {
+  --color-bg: #f7f7fa;
+  --color-surface: #ffffff;
+  --color-backdrop: #c9c9ce;
+  --color-ink: #11122b;
+  --color-ink-2: #5e6072;
+  --color-ink-3: #8a8c99;
+  --color-line: #e7e7ee;
+  --color-accent: #2438d6;
+  --color-accent-press: #1c2db0;
+  --color-ok: #7ccb2b;
+  --color-warn: #f26a1b;
+  --color-protein: #2438d6;
+  --color-fat: #f2a81b;
+  --color-carbs: #7ccb2b;
+
+  --font-display: var(--font-unbounded), system-ui, sans-serif;
+  --font-sans: var(--font-manrope), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  --radius-sheet: 32px;
+  --radius-button: 20px;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  /* Отступы под чёлку и индикатор «Домой» в полноэкранном PWA */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Цифры одинаковой ширины: 2 458 не «прыгает» при обновлении */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

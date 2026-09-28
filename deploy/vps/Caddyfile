@@ -1,0 +1,27 @@
+# HTTPS для calc.egor.am: сертификат Let's Encrypt Caddy выпускает и продлевает сам.
+calc.egor.am {
+	encode zstd gzip
+
+	# Фото еды сжимаются на телефоне до ~200 КБ; запас на несколько за раз.
+	request_body {
+		max_size 20MB
+	}
+
+	reverse_proxy calc-web:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# service worker не должен кэшироваться браузером — иначе обновления приходят с опозданием
+	@sw path /sw.js
+	header @sw Cache-Control "no-cache"
+
+	log {
+		output stdout
+		format console
+	}
+}

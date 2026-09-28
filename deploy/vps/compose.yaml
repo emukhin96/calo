@@ -1,0 +1,78 @@
+# Стек calc на VPS (72.56.93.77, 1 vCPU / 1 ГБ). Запускает deploy.sh:
+#   docker compose --env-file /opt/calc/.env --env-file /opt/calc/.version.env \
+#     -f /opt/calc/deploy/vps/compose.yaml up -d
+# Бюджет памяти — docs/PLAN.md, этап 0.6.
+
+name: calc
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  calc-web:
+    image: calc:${APP_VERSION:?APP_VERSION не задан — запускайте через deploy.sh}
+    restart: unless-stopped
+    env_file: /opt/calc/.env
+    environment:
+      DATABASE_URL: postgres://calc:${POSTGRES_PASSWORD}@calc-db:5432/calc
+    volumes:
+      - /opt/calc/data/photos:/app/data/photos
+    depends_on:
+      calc-db:
+        condition: service_healthy
+    mem_limit: 384m
+    logging: *logging
+
+  # Порт наружу не публикуется: Docker открывает опубликованные порты в обход ufw.
+  calc-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=20
+    environment:
+      POSTGRES_USER: calc
+      POSTGRES_DB: calc
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в /opt/calc/.env}
+      TZ: UTC
+    volumes:
+      - /opt/calc/data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calc -d calc"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    shm_size: 64m
+    mem_limit: 256m
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - calc-web
+    mem_limit: 64m
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:

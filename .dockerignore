@@ -1,0 +1,12 @@
+node_modules
+.next
+.data
+coverage
+.git
+.github
+.claude
+.env*
+!.env.example
+docs
+deploy
+*.md
