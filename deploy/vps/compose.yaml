@@ -70,7 +70,8 @@ services:
       - caddy_config:/config
     depends_on:
       - calc-web
-    mem_limit: 64m
+    # В покое ~55 МБ; запас на выпуск и продление сертификатов.
+    mem_limit: 128m
     logging: *logging
 
 volumes:
