@@ -1,7 +1,7 @@
 import { appIcon } from "@/ui/AppIcon";
 
-// /pwa-icon/192, /pwa-icon/512, /pwa-icon/512-maskable — для манифеста.
-const SIZES = { "192": 192, "512": 512, "512-maskable": 512 } as const;
+// /pwa-icon/192, /512, /512-maskable — для манифеста; /1024 — иконка iOS-приложения.
+const SIZES = { "192": 192, "512": 512, "512-maskable": 512, "1024": 1024 } as const;
 
 export function generateStaticParams() {
   return Object.keys(SIZES).map((size) => ({ size }));
