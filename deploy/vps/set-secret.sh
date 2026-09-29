@@ -4,7 +4,7 @@
 # ни в историю команд, ни в список процессов (только встроенные команды bash).
 # С Mac, со скрытым вводом (см. deploy/VPS.md):
 #   read -rs -p "Ключ: " KEY; echo; printf '%s\n' "$KEY" | ssh calc /opt/calc/deploy/vps/set-secret.sh ANTHROPIC_API_KEY; unset KEY
-# Для ANTHROPIC_API_KEY сразу проверяет ключ. В конце перезапускает приложение.
+# Для ANTHROPIC_API_KEY и GEMINI_API_KEY сразу проверяет ключ. В конце перезапускает приложение.
 ###############################################################################
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/lib.sh"
@@ -45,6 +45,23 @@ if [ "$NAME" = ANTHROPIC_API_KEY ]; then
     403) echo "!! доступ запрещён (403) — проверьте страну аккаунта и оплату" ;;
     *) echo "!! не удалось проверить ключ (HTTP ${code:-нет ответа})" ;;
   esac
+fi
+
+if [ "$NAME" = GEMINI_API_KEY ]; then
+  hdr="$(mktemp)"
+  printf 'x-goog-api-key: %s\n' "$VALUE" >"$hdr"
+  body="$(mktemp)"
+  code="$(curl -s -o "$body" -w '%{http_code}' --max-time 15 -H @"$hdr" 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100' || true)"
+  rm -f "$hdr"
+  case "$code" in
+    200)
+      echo "✓ ключ Gemini работает"
+      grep -oE '"name": "models/gemini-[0-9.]+-flash(-lite)?"' "$body" | sed -E 's/.*models\///; s/"$//' | sort -V | tail -3 | sed 's/^/  доступна модель: /'
+      ;;
+    400 | 403) echo "!! Google не принял ключ ($code): $(grep -oE '"message": "[^"]*"' "$body" | head -1)" ;;
+    *) echo "!! не удалось проверить ключ (HTTP ${code:-нет ответа})" ;;
+  esac
+  rm -f "$body"
 fi
 
 if [ -z "${CALC_ENV_FILE:-}" ]; then
