@@ -1,2 +1,4 @@
 # crontab пользователя deploy (crontab deploy/vps/crontab.example). Время — UTC.
 45 1 * * * /opt/calc/deploy/vps/backup.sh >> /opt/calc/data/logs/backup.log 2>&1
+# Напоминания о разборе недели (окно — понедельник 9–12 по местному времени пользователя)
+7 * * * * /opt/calc/deploy/vps/cron-hourly.sh >> /opt/calc/data/logs/cron.log 2>&1

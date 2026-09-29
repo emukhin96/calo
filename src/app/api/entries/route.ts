@@ -22,6 +22,8 @@ const CreateBody = z
     grams: z.number().positive().max(5000),
     meal: z.enum(MEALS).optional(),
     date: z.string().refine(isIsoDate).optional(),
+    /** Когда съедено по часам телефона — для записей из офлайн-очереди. */
+    eatenAt: z.iso.datetime().optional(),
   })
   .refine((b) => (b.foodId == null) !== (b.recipeId == null), "нужен ровно один из foodId, recipeId");
 
@@ -34,15 +36,20 @@ export async function POST(req: Request) {
 
   const tz = await userTimeZone(session.user.id);
   const now = new Date();
-  const date = body.data.date ?? todayIn(tz, now);
-  const meal = body.data.meal ?? mealByHour(zonedParts(now, tz).hour);
+  // Время с телефона принимаем, если оно в пределах двух суток и попадает в тот
+  // же местный день, куда пишем (запись отправлена из офлайн-очереди позже).
+  const clientAt = body.data.eatenAt ? new Date(body.data.eatenAt) : null;
+  const trusted = clientAt && Math.abs(now.getTime() - clientAt.getTime()) < 48 * 3600_000 ? clientAt : null;
+  const date = body.data.date ?? todayIn(tz, trusted ?? now);
+  const at = trusted && zonedParts(trusted, tz).date === date ? trusted : null;
+  const meal = body.data.meal ?? mealByHour(zonedParts(at ?? now, tz).hour);
   try {
     const source = body.data.recipeId ? { recipeId: body.data.recipeId } : { foodId: body.data.foodId! };
     const entry = await createEntry(db, session.user.id, {
       ...source,
       grams: body.data.grams,
       meal,
-      eatenAt: eatenAtFor(date, meal, tz, now),
+      eatenAt: at ?? eatenAtFor(date, meal, tz, now),
     });
     return Response.json(entry, { status: 201 });
   } catch (e) {

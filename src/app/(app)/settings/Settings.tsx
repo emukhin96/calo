@@ -11,6 +11,7 @@ import { Button, Eyebrow, SectionTitle } from "@/ui/components";
 import { NumberField, OptionCard, parseNum, Segmented } from "@/ui/form";
 import { formatInt } from "@/ui/format";
 import { fmtAmount, NUTRIENT_LABELS, unitRu } from "@/ui/nutrients";
+import { PushToggle } from "@/ui/PushToggle";
 
 type Weight = { id: string; kg: number; at: string };
 type Props = {
@@ -158,6 +159,15 @@ export function Settings(p: Props) {
 
       <WeightSection weights={p.weights} />
       <NormsSection norms={p.norms} overrides={p.overrides} />
+
+      <SectionTitle>Уведомления</SectionTitle>
+      <PushToggle />
+
+      <SectionTitle>Данные</SectionTitle>
+      <a href="/api/export" download className="text-[16px] font-semibold text-accent">
+        Скачать дневник (CSV) →
+      </a>
+      <p className="mt-1 text-[13px] text-ink-3">Все записи с КБЖУ и витаминами — открывается в Excel и Numbers.</p>
 
       <SectionTitle>Аккаунт</SectionTitle>
       <p className="text-[15px] text-ink-2">{p.email}</p>

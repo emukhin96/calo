@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, dayRange, dayTitle, eatenAtFor, isIsoDate, isValidTimeZone, mealByHour, todayIn, zonedTime } from "./day";
+import { addDays, dayRange, dayTitle, eatenAtFor, isIsoDate, isValidTimeZone, isWeeklyDigestTime, mealByHour, todayIn, zonedTime } from "./day";
 
 describe("dayRange", () => {
   it("Москва: сутки начинаются в 21:00 UTC накануне", () => {
@@ -68,5 +68,21 @@ describe("разное", () => {
     expect(dayTitle("2026-09-29", "Europe/Moscow", now)).toBe("Сегодня");
     expect(dayTitle("2026-09-28", "Europe/Moscow", now)).toBe("Вчера");
     expect(dayTitle("2026-09-26", "Europe/Moscow", now)).toBe("суббота, 26 сентября");
+  });
+});
+
+describe("isWeeklyDigestTime", () => {
+  it("понедельник 9–12 по местному времени", () => {
+    // 2026-09-28 — понедельник
+    expect(isWeeklyDigestTime(new Date("2026-09-28T06:05:00Z"), "Europe/Moscow")).toBe(true); // 09:05 МСК
+    expect(isWeeklyDigestTime(new Date("2026-09-28T05:59:00Z"), "Europe/Moscow")).toBe(false); // 08:59
+    expect(isWeeklyDigestTime(new Date("2026-09-28T09:00:00Z"), "Europe/Moscow")).toBe(false); // 12:00
+    expect(isWeeklyDigestTime(new Date("2026-09-29T06:05:00Z"), "Europe/Moscow")).toBe(false); // вторник
+  });
+
+  it("часовой пояс решает, понедельник ли сейчас", () => {
+    // 01:30 UTC понедельника: в Токио (+9) уже 10:30, в Ереване (+4) — только 05:30
+    expect(isWeeklyDigestTime(new Date("2026-09-28T01:30:00Z"), "Asia/Tokyo")).toBe(true); // 10:30 пн
+    expect(isWeeklyDigestTime(new Date("2026-09-28T01:30:00Z"), "Asia/Yerevan")).toBe(false); // 05:30 пн
   });
 });

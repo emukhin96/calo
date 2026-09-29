@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { amountToGrams, parseAmount } from "@/domain/amount";
+import { cacheGet, cacheSet, postEntry } from "@/lib/offline";
 import type { Meal } from "@/domain/day";
 import type { FoodResult } from "@/db/foods";
 import type { RecipeSummary } from "@/db/recipes";
@@ -10,6 +11,7 @@ import Link from "next/link";
 import { NUTRIENT_KEYS, type NutrientVector } from "@/domain/nutrients";
 import { fmtAmount, NUTRIENT_LABELS, unitRu } from "@/ui/nutrients";
 import { Eyebrow } from "@/ui/components";
+import { BarcodeScanner } from "@/ui/BarcodeScanner";
 import { PortionSheet } from "@/ui/PortionSheet";
 
 type OffItem = { code: string; nameRu: string; brand: string | null; nutrientsPer100g: NutrientVector };
@@ -74,19 +76,30 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
   const [recipes, setRecipes] = useState<RecipeSummary[] | null>(null);
   const [foundRecipes, setFoundRecipes] = useState<RecipeSummary[]>([]);
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [searchOffline, setSearchOffline] = useState(false);
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
   const seq = useRef(0);
   const { query, amount } = parseAmount(q);
 
   useEffect(() => {
     fetch(`/api/recipes?meal=${meal}`)
-      .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((d) => setRecipes(d.items));
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => {
+        setRecipes(d.items);
+        cacheSet("recipes", d.items);
+      })
+      .catch(() => setRecipes(cacheGet<RecipeSummary[]>("recipes") ?? [])); // без сети — последний список
   }, [meal]);
 
   useEffect(() => {
     fetch("/api/entries/recent")
-      .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((d) => setRecent(d.items));
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => {
+        setRecent(d.items);
+        cacheSet("recent", d.items);
+      })
+      .catch(() => setRecent(cacheGet<Recent[]>("recent") ?? []));
   }, []);
 
   function onQueryChange(value: string) {
@@ -104,8 +117,10 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
     const my = ++seq.current;
     if (query.trim().length < 2) return;
     const t = setTimeout(async () => {
-      const res = await fetch(`/api/foods/search?q=${encodeURIComponent(query)}`);
-      if (my !== seq.current || !res.ok) return;
+      const res = await fetch(`/api/foods/search?q=${encodeURIComponent(query)}`).catch(() => null);
+      if (my !== seq.current) return;
+      setSearchOffline(res == null);
+      if (!res?.ok) return;
       const data = await res.json();
       setItems(data.items);
       setFoundRecipes(data.recipes ?? []);
@@ -125,6 +140,27 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
     setPicked({ kind: "recipe", recipe, grams: Math.round(fromQuery ?? (recipe.defaultPortionG ?? 100) * pieces) });
   }
 
+  /** Штрихкод → свой справочник или Open Food Facts → лист порции. */
+  const onBarcode = useCallback(
+    async (code: string) => {
+      setScanning(false);
+      setScanMsg(`Ищу товар ${code}…`);
+      const res = await fetch(`/api/foods/barcode/${code}`).catch(() => null);
+      if (res?.ok) {
+        const food = (await res.json()) as FoodResult;
+        setScanMsg(null);
+        setPicked({ kind: "food", food, grams: Math.round(food.defaultPortionG ?? 100) });
+      } else {
+        setScanMsg(
+          res?.status === 404
+            ? `Товара ${code} нет в Open Food Facts или у него нет КБЖУ — найдите продукт по названию.`
+            : "Open Food Facts не отвечает — попробуйте ещё раз или найдите по названию.",
+        );
+      }
+    },
+    [],
+  );
+
   async function searchOff() {
     setOffState("loading");
     const res = await fetch(`/api/foods/off?q=${encodeURIComponent(query)}`);
@@ -143,17 +179,17 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
   }
 
   async function addEntry(grams: number, m: Meal) {
-    const res = await fetch("/api/entries", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ...(picked!.kind === "food" ? { foodId: picked!.food.id } : { recipeId: picked!.recipe.id }),
-        grams,
-        meal: m,
-        date,
-      }),
-    });
-    if (!res.ok) throw new Error("save failed");
+    const p = picked!;
+    const result = await postEntry(
+      { ...(p.kind === "food" ? { foodId: p.food.id } : { recipeId: p.recipe.id }), grams, meal: m, date },
+      p.kind === "food" ? p.food.nameRu : p.recipe.name,
+    );
+    if (result === "queued") {
+      // Без сети клиентский переход не загрузится — открываем день из кэша service worker.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- офлайн: нужна полная загрузка из кэша SW
+      window.location.assign(`/?d=${date}`);
+      return;
+    }
     router.push(`/?d=${date}`);
     router.refresh();
   }
@@ -246,15 +282,37 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
         </>
       ) : (
       <>
-      <input
-        autoFocus
-        type="search"
-        enterKeyHint="search"
-        placeholder="«творог 5% 180», «кефир 250», «яйцо 2 шт»"
-        value={q}
-        onChange={(e) => onQueryChange(e.target.value)}
-        className="h-[56px] w-full rounded-[var(--radius-button)] border border-line bg-surface px-5 text-[17px] outline-none focus:border-accent"
-      />
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          type="search"
+          enterKeyHint="search"
+          placeholder="«творог 5% 180», «кефир 250», «яйцо 2 шт»"
+          value={q}
+          onChange={(e) => onQueryChange(e.target.value)}
+          className="h-[56px] min-w-0 flex-1 rounded-[var(--radius-button)] border border-line bg-surface px-5 text-[17px] outline-none focus:border-accent"
+        />
+        <button
+          type="button"
+          aria-label="Сканировать штрихкод"
+          onClick={() => {
+            setScanMsg(null);
+            setScanning(true);
+          }}
+          className="flex h-[56px] w-[56px] shrink-0 items-center justify-center rounded-[var(--radius-button)] bg-surface text-ink-2"
+        >
+          <svg viewBox="0 0 24 24" className="size-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+            <path d="M7 8v8M10 8v8M13 8v8M16 8v8" />
+          </svg>
+        </button>
+      </div>
+      {scanMsg && <p className="mt-3 rounded-2xl bg-surface px-4 py-3 text-[15px] text-ink-2">{scanMsg}</p>}
+      {searchOffline && query.trim().length >= 2 && (
+        <p className="mt-3 rounded-2xl bg-surface px-4 py-3 text-[15px] text-ink-2">
+          Нет сети — поиск недоступен. Добавить можно из недавних и «Моих блюд»: запись отправится, когда появится сеть.
+        </p>
+      )}
       {amount && (
         <p className="mt-2 font-mono text-[13px] tracking-[0.04em] text-ink-3">
           {"grams" in amount ? `количество: ${amount.grams} г` : `количество: ${amount.pieces} шт`}
@@ -314,6 +372,8 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
 
       </>
       )}
+
+      {scanning && <BarcodeScanner onCode={onBarcode} onClose={() => setScanning(false)} />}
 
       {picked && (
         <PortionSheet

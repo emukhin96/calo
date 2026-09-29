@@ -6,7 +6,7 @@
  * и портит данные. Здесь база одна, а Next ходит в неё по протоколу Postgres
  * через драйвер pg — ровно как в проде.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
@@ -18,6 +18,8 @@ const DATA_DIR = path.join(ROOT, ".data/pg");
 const PORT = Number(process.env.DEV_DB_PORT ?? 5433);
 
 async function main() {
+  // Распознаватель штрихкодов в public/wasm (как в build).
+  spawnSync("node", ["scripts/copy-wasm.mjs"], { cwd: ROOT, stdio: "inherit" });
   mkdirSync(path.dirname(DATA_DIR), { recursive: true });
   const db = await PGlite.create({ dataDir: DATA_DIR, extensions: { pg_trgm } });
   const server = new PGLiteSocketServer({ db, host: "127.0.0.1", port: PORT, maxConnections: 4 });

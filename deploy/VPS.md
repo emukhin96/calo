@@ -52,5 +52,7 @@ read -rs -p "Ключ Claude API: " KEY; echo; printf '%s\n' "$KEY" | ssh calc /
 - `deploy/vps/bootstrap.sh` (root): обновления, swap, Docker, пользователь
   `deploy`, ufw (22, 80, 443 + мониторинг Timeweb), каталоги.
 - `deploy/vps/harden-ssh.sh`: вход только по ключу и только `deploy`.
-- Бэкап: `crontab deploy/vps/crontab.example` — ежедневно 01:45 UTC, 14 дней.
+- Push: `deploy/vps/gen-push-keys.sh` — ключи VAPID и CRON_SECRET в `.env`.
+- Cron (`crontab deploy/vps/crontab.example`): бэкап ежедневно 01:45 UTC (14 дней);
+  каждый час `cron-hourly.sh` — напоминания о разборе недели (пн 9–12 по местному).
   Копии пока только на сервере — вынести наружу (TODO).

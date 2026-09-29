@@ -128,3 +128,12 @@ export function weekTitle(monday: string): string {
     ? `${fmt(monday, { day: "numeric" })}–${fmt(sunday, { day: "numeric", month: "long" })}`
     : `${fmt(monday, { day: "numeric", month: "long" })} – ${fmt(sunday, { day: "numeric", month: "long" })}`;
 }
+
+/**
+ * Пора ли напомнить о разборе недели: понедельник, 9:00–11:59 по местному
+ * времени (cron дёргает раз в час — окно в три часа переживает пропуск).
+ */
+export function isWeeklyDigestTime(now: Date, tz: string): boolean {
+  const { date, hour } = zonedParts(now, tz);
+  return weekStart(date) === date && hour >= 9 && hour < 12;
+}

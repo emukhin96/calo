@@ -43,3 +43,6 @@ next-env.d.ts
 # local data (PGlite), Dropbox-ignored dirs
 /.data/
 !.env.example
+
+# распознаватель штрихкодов копируется при сборке (scripts/copy-wasm.mjs)
+/public/wasm/

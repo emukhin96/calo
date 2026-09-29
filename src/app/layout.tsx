@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { OfflineSync } from "@/ui/OfflineSync";
 import { ServiceWorker } from "@/ui/ServiceWorker";
 // Шрифты лежат в node_modules (Fontsource), сборка не ходит в Google Fonts.
 // Файлы разбиты по unicode-range: браузер качает только кириллицу и латиницу.
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="ru">
       <body className="min-h-dvh">
         {children}
+        <OfflineSync />
         <ServiceWorker />
       </body>
     </html>

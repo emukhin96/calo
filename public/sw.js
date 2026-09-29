@@ -2,7 +2,7 @@
 // - /_next/static/* и шрифты — cache-first (имена файлов с хэшем, не устаревают);
 // - страницы — network-first с запасной копией из кэша;
 // - /api/* не трогаем никогда: данные дневника всегда свежие.
-const VERSION = "calo-v1";
+const VERSION = "calo-v2";
 const STATIC = `${VERSION}-static`;
 const PAGES = `${VERSION}-pages`;
 
@@ -24,7 +24,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
 
-  if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/pwa-icon/")) {
+  if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/pwa-icon/") || url.pathname.startsWith("/wasm/")) {
     event.respondWith(
       caches.open(STATIC).then(async (cache) => {
         const hit = await cache.match(req);
@@ -51,4 +51,40 @@ self.addEventListener("fetch", (event) => {
       })(),
     );
   }
+});
+
+// ─── Push: «Разбор недели готов» ───────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  let msg = { title: "Calo", body: "", url: "/" };
+  try {
+    msg = { ...msg, ...event.data.json() };
+  } catch {
+    if (event.data) msg.body = event.data.text();
+  }
+  event.waitUntil(
+    self.registration.showNotification(msg.title, {
+      body: msg.body,
+      tag: msg.tag,
+      icon: "/pwa-icon/192",
+      badge: "/pwa-icon/192",
+      data: { url: msg.url },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url ?? "/", self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const w of wins) {
+        if (new URL(w.url).origin === self.location.origin) {
+          await w.focus();
+          return w.navigate(url);
+        }
+      }
+      return self.clients.openWindow(url);
+    })(),
+  );
 });
