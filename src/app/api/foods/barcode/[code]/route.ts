@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { upsertFood } from "@/db/foods";
+import { getFood, upsertFood } from "@/db/foods";
 import { foods } from "@/db/schema";
 import { apiSession } from "@/lib/api";
 import { fetchOffProduct } from "@/lib/off";
@@ -11,11 +11,12 @@ import { fetchOffProduct } from "@/lib/off";
  * Этим же путём сохраняется выбранный результат поиска в OFF.
  */
 export async function GET(req: Request, ctx: RouteContext<"/api/foods/barcode/[code]">) {
-  const { error } = await apiSession(req);
+  const { session, error } = await apiSession(req);
   if (error) return error;
   const { code } = await ctx.params;
   if (!/^\d{8,14}$/.test(code)) return Response.json({ error: "bad barcode" }, { status: 400 });
 
+  const cachedFood = async () => (cached ? Response.json(await getFood(db, session.user.id, cached.id)) : null);
   const [cached] = await db
     .select({ id: foods.id })
     .from(foods)
@@ -23,11 +24,11 @@ export async function GET(req: Request, ctx: RouteContext<"/api/foods/barcode/[c
   try {
     const product = await fetchOffProduct(code);
     if (!product) {
-      return cached ? Response.json({ id: cached.id }) : Response.json({ error: "not found" }, { status: 404 });
+      return (await cachedFood()) ?? Response.json({ error: "not found" }, { status: 404 });
     }
     return Response.json(await upsertFood(db, product));
   } catch (e) {
     console.error("[off] product", e);
-    return cached ? Response.json({ id: cached.id }) : Response.json({ error: "Open Food Facts не отвечает" }, { status: 502 });
+    return (await cachedFood()) ?? Response.json({ error: "Open Food Facts не отвечает" }, { status: 502 });
   }
 }

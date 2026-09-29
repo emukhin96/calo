@@ -1,6 +1,6 @@
 // Доступ к справочнику продуктов. Функции принимают db параметром — тесты
 // гоняют их на PGlite в памяти (src/db/foods.test.ts).
-import { and, eq, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { NutrientVector } from "@/domain/nutrients";
 import { buildSearchText, queryTokens } from "@/domain/search";
 import type { DB } from ".";
@@ -129,4 +129,24 @@ export async function upsertFood(db: DB, item: FoodUpsert): Promise<FoodResult> 
     .where(and(eq(foods.source, item.source), eq(foods.sourceRef, item.sourceRef)));
   const { ownerId, ...r } = row;
   return { ...r, own: ownerId != null };
+}
+
+/** Продукт по id: общий или свой. */
+export async function getFood(db: DB, ownerId: string, id: string): Promise<FoodResult | null> {
+  const [row] = await db
+    .select(resultColumns)
+    .from(foods)
+    .where(and(eq(foods.id, id), or(isNull(foods.ownerId), eq(foods.ownerId, ownerId))));
+  if (!row) return null;
+  const { ownerId: owner, ...r } = row;
+  return { ...r, own: owner != null };
+}
+
+export async function getFoods(db: DB, ownerId: string, ids: string[]): Promise<FoodResult[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select(resultColumns)
+    .from(foods)
+    .where(and(inArray(foods.id, ids), or(isNull(foods.ownerId), eq(foods.ownerId, ownerId))));
+  return rows.map(({ ownerId: owner, ...r }) => ({ ...r, own: owner != null }));
 }
