@@ -9,7 +9,13 @@ import type { DB } from ".";
 import { type FoodUpsert, upsertFoods } from "./foods";
 import { appMeta } from "./schema";
 
-type UsdaFood = { ref: string; category: string; nameEn: string; nutrients: NutrientVector };
+type UsdaFood = {
+  ref: string;
+  category: string;
+  nameEn: string;
+  nutrients: NutrientVector;
+  portion?: { grams: number; label: string };
+};
 type UsdaRu = { ref: string; ru: string; aliases: string[] };
 export type StapleFood = {
   slug: string;
@@ -49,6 +55,8 @@ export function loadSeedFoods(dir: string): { items: FoodUpsert[]; hash: string 
         nameEn: f.nameEn,
         aliases: tr?.aliases ?? [],
         nutrientsPer100g: f.nutrients,
+        defaultPortionG: f.portion?.grams ?? null,
+        portionLabel: f.portion?.label ?? null,
       });
     }
   }

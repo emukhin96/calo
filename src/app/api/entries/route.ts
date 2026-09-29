@@ -15,14 +15,17 @@ export async function GET(req: Request) {
   return Response.json(await loadDay(session.user.id, isIsoDate(date) ? date : todayIn(tz), tz));
 }
 
-const CreateBody = z.object({
-  foodId: z.uuid(),
-  grams: z.number().positive().max(5000),
-  meal: z.enum(MEALS).optional(),
-  date: z.string().refine(isIsoDate).optional(),
-});
+const CreateBody = z
+  .object({
+    foodId: z.uuid().optional(),
+    recipeId: z.uuid().optional(),
+    grams: z.number().positive().max(5000),
+    meal: z.enum(MEALS).optional(),
+    date: z.string().refine(isIsoDate).optional(),
+  })
+  .refine((b) => (b.foodId == null) !== (b.recipeId == null), "нужен ровно один из foodId, recipeId");
 
-/** POST /api/entries { foodId, grams, meal?, date? } — нутриенты считает сервер. */
+/** POST /api/entries { foodId | recipeId, grams, meal?, date? } — нутриенты считает сервер. */
 export async function POST(req: Request) {
   const { session, error } = await apiSession(req);
   if (error) return error;
@@ -34,15 +37,16 @@ export async function POST(req: Request) {
   const date = body.data.date ?? todayIn(tz, now);
   const meal = body.data.meal ?? mealByHour(zonedParts(now, tz).hour);
   try {
+    const source = body.data.recipeId ? { recipeId: body.data.recipeId } : { foodId: body.data.foodId! };
     const entry = await createEntry(db, session.user.id, {
-      foodId: body.data.foodId,
+      ...source,
       grams: body.data.grams,
       meal,
       eatenAt: eatenAtFor(date, meal, tz, now),
     });
     return Response.json(entry, { status: 201 });
   } catch (e) {
-    if (e instanceof NotFoundError) return Response.json({ error: "food not found" }, { status: 404 });
+    if (e instanceof NotFoundError) return Response.json({ error: "not found" }, { status: 404 });
     throw e;
   }
 }

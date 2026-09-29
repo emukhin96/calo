@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb } from "@/test/db";
 import type { DB } from ".";
 import { type FoodResult, searchFoods, upsertFood } from "./foods";
-import { user } from "./schema";
+import { entries, user } from "./schema";
 import { seedFoods } from "./seed-foods";
 
 // Критерий готовности этапа 1 (docs/PLAN.md): типичные запросы находят верные
@@ -57,6 +57,24 @@ describe("searchFoods на справочнике", () => {
   it("пустой и бессмысленный запрос", async () => {
     expect(await searchFoods(db, OWNER, "  ")).toEqual([]);
     expect(await searchFoods(db, OWNER, "ъъъъъ")).toEqual([]);
+  });
+});
+
+describe("ранжирование", () => {
+  it("то, что уже ели, поднимается наверх", async () => {
+    const before = await searchFoods(db, OWNER, "куриная грудка");
+    const pick = before[before.length > 3 ? 3 : before.length - 1];
+    await db.insert(entries).values({
+      ownerId: OWNER, eatenAt: new Date(), meal: "lunch", inputMethod: "product",
+      title: pick.nameRu, foodId: pick.id, grams: 150, nutrients: {},
+    });
+    expect((await searchFoods(db, OWNER, "куриная грудка"))[0].id).toBe(pick.id);
+  });
+
+  it("яйцо: у продукта есть вес штуки из USDA", async () => {
+    const egg = (await searchFoods(db, OWNER, "яйцо куриное сырое")).find((f) => f.defaultPortionG);
+    expect(egg?.defaultPortionG).toBeGreaterThanOrEqual(40);
+    expect(egg?.portionLabel).toMatch(/^1 шт/);
   });
 });
 

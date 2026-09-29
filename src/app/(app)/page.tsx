@@ -63,9 +63,10 @@ export default async function DayPage({ searchParams }: PageProps<"/">) {
         <MacroBar label="Жиры" value={totals.fat ?? 0} norm={norms.nutrients.fat!.value} color="var(--color-fat)" />
         <MacroBar label="Углеводы" value={totals.carbs ?? 0} norm={norms.nutrients.carbs!.value} color="var(--color-carbs)" />
       </div>
-      <Link href={`/nutrients?d=${date}`} className="mt-4 inline-block text-[15px] font-semibold text-accent">
-        Витамины и минералы →
-      </Link>
+      <div className="mt-4 flex gap-5 text-[15px] font-semibold text-accent">
+        <Link href={`/nutrients?d=${date}`}>Витамины и минералы →</Link>
+        <Link href="/recipes">Мои блюда →</Link>
+      </div>
 
       <EntryList
         date={date}

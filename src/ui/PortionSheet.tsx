@@ -17,6 +17,8 @@ type Props = {
   submitLabel: string;
   onSubmit: (grams: number, meal: Meal) => Promise<void>;
   onDelete?: () => Promise<void>;
+  /** Дополнительное действие под кнопкой: «Сохранить как блюдо». */
+  extra?: { label: string; run: () => Promise<void> };
   onClose: () => void;
 };
 
@@ -124,6 +126,16 @@ export function PortionSheet(p: Props) {
             className="mt-3 w-full py-3 text-[16px] font-semibold text-warn disabled:opacity-50"
           >
             Удалить запись
+          </button>
+        )}
+        {p.extra && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(p.extra!.run)}
+            className="w-full py-2 text-[15px] font-semibold text-accent disabled:opacity-50"
+          >
+            {p.extra.label}
           </button>
         )}
       </div>

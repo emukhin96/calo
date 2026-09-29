@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { amountToGrams, parseAmount } from "@/domain/amount";
 import type { Meal } from "@/domain/day";
 import type { FoodResult } from "@/db/foods";
+import type { RecipeSummary } from "@/db/recipes";
+import Link from "next/link";
 import { NUTRIENT_KEYS, type NutrientVector } from "@/domain/nutrients";
 import { fmtAmount, NUTRIENT_LABELS, unitRu } from "@/ui/nutrients";
 import { Eyebrow } from "@/ui/components";
@@ -47,6 +49,14 @@ function Details({ n }: { n: NutrientVector }) {
 
 type Recent = { food: FoodResult; lastGrams: number };
 
+type Picked =
+  | { kind: "food"; food: FoodResult; grams: number }
+  | { kind: "recipe"; recipe: RecipeSummary; grams: number };
+
+function recipePortion(r: RecipeSummary) {
+  return r.defaultPortionG ? { grams: Math.round(r.defaultPortionG), label: `порция (${Math.round(r.defaultPortionG)} г)` } : null;
+}
+
 function portionOf(f: FoodResult) {
   return f.defaultPortionG ? { grams: f.defaultPortionG, label: f.portionLabel ?? `порция ${f.defaultPortionG} г` } : null;
 }
@@ -60,9 +70,18 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
   const [off, setOff] = useState<OffItem[] | null>(null);
   const [offState, setOffState] = useState<"idle" | "loading" | "error">("idle");
   const [open, setOpen] = useState<string | null>(null);
-  const [picked, setPicked] = useState<{ food: FoodResult; grams: number } | null>(null);
+  const [tab, setTab] = useState<"food" | "recipes">("food");
+  const [recipes, setRecipes] = useState<RecipeSummary[] | null>(null);
+  const [foundRecipes, setFoundRecipes] = useState<RecipeSummary[]>([]);
+  const [picked, setPicked] = useState<Picked | null>(null);
   const seq = useRef(0);
   const { query, amount } = parseAmount(q);
+
+  useEffect(() => {
+    fetch(`/api/recipes?meal=${meal}`)
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => setRecipes(d.items));
+  }, [meal]);
 
   useEffect(() => {
     fetch("/api/entries/recent")
@@ -74,7 +93,10 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
     setQ(value);
     setOff(null);
     setOffState("idle");
-    if (parseAmount(value).query.trim().length < 2) setItems([]);
+    if (parseAmount(value).query.trim().length < 2) {
+      setItems([]);
+      setFoundRecipes([]);
+    }
   }
 
   // Поиск по своему справочнику с задержкой 200 мс; устаревшие ответы отбрасываются.
@@ -84,7 +106,9 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
     const t = setTimeout(async () => {
       const res = await fetch(`/api/foods/search?q=${encodeURIComponent(query)}`);
       if (my !== seq.current || !res.ok) return;
-      setItems((await res.json()).items);
+      const data = await res.json();
+      setItems(data.items);
+      setFoundRecipes(data.recipes ?? []);
     }, 200);
     return () => clearTimeout(t);
   }, [query]);
@@ -92,7 +116,13 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
   /** Граммы по умолчанию: из строки («кефир 250», «яйцо 2 шт»), иначе порция, иначе 100. */
   function pick(food: FoodResult, fallback?: number) {
     const fromQuery = amount ? amountToGrams(amount, food.defaultPortionG) : null;
-    setPicked({ food, grams: Math.round(fromQuery ?? fallback ?? food.defaultPortionG ?? 100) });
+    setPicked({ kind: "food", food, grams: Math.round(fromQuery ?? fallback ?? food.defaultPortionG ?? 100) });
+  }
+
+  function pickRecipe(recipe: RecipeSummary) {
+    const fromQuery = amount && "grams" in amount ? amount.grams : null;
+    const pieces = amount && "pieces" in amount ? amount.pieces : 1;
+    setPicked({ kind: "recipe", recipe, grams: Math.round(fromQuery ?? (recipe.defaultPortionG ?? 100) * pieces) });
   }
 
   async function searchOff() {
@@ -116,7 +146,12 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
     const res = await fetch("/api/entries", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ foodId: picked!.food.id, grams, meal: m, date }),
+      body: JSON.stringify({
+        ...(picked!.kind === "food" ? { foodId: picked!.food.id } : { recipeId: picked!.recipe.id }),
+        grams,
+        meal: m,
+        date,
+      }),
     });
     if (!res.ok) throw new Error("save failed");
     router.push(`/?d=${date}`);
@@ -149,10 +184,68 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
     </li>
   );
 
+  const recipeRow = (r: RecipeSummary) => (
+    <li key={r.id}>
+      <button type="button" className="w-full py-3 text-left" onClick={() => pickRecipe(r)}>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-[16px] font-semibold text-ink">{r.name}</span>
+          <span className="shrink-0 font-mono text-[11px] tracking-[0.06em] text-accent uppercase">блюдо</span>
+        </div>
+        <div className="mt-0.5 text-[14px] text-ink-2">
+          {r.defaultPortionG ? (
+            <>
+              <span className="tabular">{Math.round(((r.nutrientsPer100g.kcal ?? 0) * r.defaultPortionG) / 100)} ккал</span>{" "}
+              <span className="text-ink-3">за порцию {Math.round(r.defaultPortionG)} г</span>
+            </>
+          ) : (
+            <>
+              <Macros n={r.nutrientsPer100g} /> <span className="text-ink-3">на 100 г</span>
+            </>
+          )}
+        </div>
+      </button>
+    </li>
+  );
+
   const showRecent = query.trim().length < 2 && recent.length > 0;
 
   return (
     <div>
+      <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl bg-line/60 p-1">
+        {(
+          [
+            ["food", "Продукт"],
+            ["recipes", `Мои блюда${recipes?.length ? ` · ${recipes.length}` : ""}`],
+          ] as const
+        ).map(([t, label]) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            className={`rounded-xl py-2 text-[15px] font-semibold ${tab === t ? "bg-surface text-ink shadow-sm" : "text-ink-2"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "recipes" ? (
+        <>
+          {recipes && recipes.length > 0 ? (
+            <ul className="divide-y divide-line">{recipes.map(recipeRow)}</ul>
+          ) : (
+            <p className="text-[15px] leading-relaxed text-ink-2">
+              {recipes ? "Своих блюд пока нет. Соберите блюдо из ингредиентов или сохраните любую запись дневника." : "Загружаю…"}
+            </p>
+          )}
+          <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[15px] font-semibold text-accent">
+            <Link href="/recipes/new?kind=composite">+ Блюдо из ингредиентов</Link>
+            <Link href="/recipes/new?kind=template">+ Своё КБЖУ</Link>
+            <Link href="/recipes">Все блюда →</Link>
+          </div>
+        </>
+      ) : (
+      <>
       <input
         autoFocus
         type="search"
@@ -177,6 +270,12 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
         </>
       )}
 
+      {foundRecipes.length > 0 && (
+        <>
+          <Eyebrow className="mt-5">Мои блюда</Eyebrow>
+          <ul className="divide-y divide-line">{foundRecipes.map(recipeRow)}</ul>
+        </>
+      )}
       <ul className="mt-4 divide-y divide-line">{items.map((f) => row(f, () => pick(f)))}</ul>
 
       {query.trim().length >= 2 && (
@@ -213,14 +312,17 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
         </div>
       )}
 
+      </>
+      )}
+
       {picked && (
         <PortionSheet
-          title={picked.food.nameRu}
-          subtitle={picked.food.brand ?? undefined}
-          per100g={picked.food.nutrientsPer100g}
+          title={picked.kind === "food" ? picked.food.nameRu : picked.recipe.name}
+          subtitle={picked.kind === "food" ? (picked.food.brand ?? undefined) : "моё блюдо"}
+          per100g={picked.kind === "food" ? picked.food.nutrientsPer100g : picked.recipe.nutrientsPer100g}
           initialGrams={picked.grams}
           initialMeal={meal}
-          portion={portionOf(picked.food)}
+          portion={picked.kind === "food" ? portionOf(picked.food) : recipePortion(picked.recipe)}
           submitLabel="Добавить"
           onSubmit={addEntry}
           onClose={() => setPicked(null)}

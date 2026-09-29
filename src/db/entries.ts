@@ -4,7 +4,7 @@ import { and, asc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { type NutrientVector, NUTRIENT_KEYS, scale } from "@/domain/nutrients";
 import type { Meal } from "@/domain/day";
 import type { DB } from ".";
-import { entries, foods } from "./schema";
+import { entries, foods, recipes } from "./schema";
 
 export type Entry = {
   id: string;
@@ -13,6 +13,7 @@ export type Entry = {
   title: string;
   grams: number;
   foodId: string | null;
+  recipeId: string | null;
   nutrients: NutrientVector;
 };
 
@@ -23,6 +24,7 @@ const columns = {
   title: entries.title,
   grams: entries.grams,
   foodId: entries.foodId,
+  recipeId: entries.recipeId,
   nutrients: entries.nutrients,
 };
 
@@ -36,11 +38,36 @@ export async function listEntries(db: DB, ownerId: string, range: { start: Date;
 
 export class NotFoundError extends Error {}
 
+export type EntrySource = { foodId: string } | { recipeId: string };
+
 export async function createEntry(
   db: DB,
   ownerId: string,
-  input: { foodId: string; grams: number; meal: Meal; eatenAt: Date },
+  input: EntrySource & { grams: number; meal: Meal; eatenAt: Date },
 ): Promise<Entry> {
+  const base = { ownerId, eatenAt: input.eatenAt, meal: input.meal, grams: input.grams };
+
+  if ("recipeId" in input) {
+    // Своё блюдо: снимок из его КБЖУ на 100 г; счётчик — для сортировки «Мои блюда».
+    const [recipe] = await db
+      .update(recipes)
+      .set({ useCount: sql`${recipes.useCount} + 1`, lastUsedAt: new Date() })
+      .where(and(eq(recipes.id, input.recipeId), eq(recipes.ownerId, ownerId)))
+      .returning({ id: recipes.id, name: recipes.name, kind: recipes.kind, per100g: recipes.nutrientsPer100g });
+    if (!recipe) throw new NotFoundError("recipe not found");
+    const [row] = await db
+      .insert(entries)
+      .values({
+        ...base,
+        inputMethod: recipe.kind === "template" ? "template" : "recipe",
+        title: recipe.name,
+        recipeId: recipe.id,
+        nutrients: scale(recipe.per100g, input.grams),
+      })
+      .returning(columns);
+    return row;
+  }
+
   // Продукт: общий справочник или свой — чужие личные продукты недоступны.
   const [food] = await db
     .select({ id: foods.id, nameRu: foods.nameRu, brand: foods.brand, per100g: foods.nutrientsPer100g })
@@ -51,13 +78,10 @@ export async function createEntry(
   const [row] = await db
     .insert(entries)
     .values({
-      ownerId,
-      eatenAt: input.eatenAt,
-      meal: input.meal,
+      ...base,
       inputMethod: "product",
       title: food.brand ? `${food.nameRu} · ${food.brand}` : food.nameRu,
       foodId: food.id,
-      grams: input.grams,
       nutrients: scale(food.per100g, input.grams),
     })
     .returning(columns);

@@ -25,6 +25,7 @@ function per100g(e: Entry): NutrientVector {
 export function EntryList({ date, meals }: { date: string; meals: MealGroup[] }) {
   const router = useRouter();
   const [editing, setEditing] = useState<Entry | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
 
   async function save(grams: number, meal: Meal) {
     const res = await fetch(`/api/entries/${editing!.id}`, {
@@ -35,6 +36,24 @@ export function EntryList({ date, meals }: { date: string; meals: MealGroup[] })
     if (!res.ok) throw new Error("save failed");
     setEditing(null);
     router.refresh();
+  }
+
+  /** Одна запись или весь приём пищи → «Мои блюда». Название спрашиваем сразу. */
+  async function saveAsDish(entryIds: string[], suggested: string) {
+    const name = window.prompt("Название блюда", suggested)?.trim();
+    if (!name) return;
+    const res = await fetch("/api/recipes/from-entries", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entryIds, name }),
+    });
+    if (!res.ok) {
+      window.alert("Не получилось сохранить блюдо");
+      return;
+    }
+    setEditing(null);
+    setSaved(name);
+    setTimeout(() => setSaved(null), 3000);
   }
 
   async function remove() {
@@ -75,9 +94,20 @@ export function EntryList({ date, meals }: { date: string; meals: MealGroup[] })
                 ))}
               </ul>
               {entries.length > 0 && (
-                <Link href={`/add?d=${date}&meal=${meal}`} className="text-[14px] font-semibold text-accent">
-                  + ещё
-                </Link>
+                <div className="flex gap-5 text-[14px] font-semibold">
+                  <Link href={`/add?d=${date}&meal=${meal}`} className="text-accent">
+                    + ещё
+                  </Link>
+                  {entries.filter((e) => e.foodId).length >= 2 && (
+                    <button
+                      type="button"
+                      onClick={() => saveAsDish(entries.map((e) => e.id), `Мой ${title.toLowerCase()}`)}
+                      className="text-ink-3"
+                    >
+                      сохранить как блюдо
+                    </button>
+                  )}
+                </div>
               )}
             </section>
           );
@@ -93,8 +123,15 @@ export function EntryList({ date, meals }: { date: string; meals: MealGroup[] })
           submitLabel="Сохранить"
           onSubmit={save}
           onDelete={remove}
+          extra={{ label: "Сохранить как блюдо", run: () => saveAsDish([editing.id], editing.title) }}
           onClose={() => setEditing(null)}
         />
+      )}
+
+      {saved && (
+        <div className="fixed inset-x-6 bottom-[calc(100px+env(safe-area-inset-bottom))] z-40 mx-auto max-w-md rounded-2xl bg-ink px-5 py-3 text-center text-[15px] text-white shadow-lg">
+          «{saved}» — в «Моих блюдах»
+        </div>
       )}
     </>
   );

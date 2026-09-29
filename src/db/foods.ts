@@ -4,7 +4,7 @@ import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { NutrientVector } from "@/domain/nutrients";
 import { buildSearchText, queryTokens } from "@/domain/search";
 import type { DB } from ".";
-import { foods } from "./schema";
+import { entries, foods } from "./schema";
 
 export type FoodSource = (typeof foods.$inferSelect)["source"];
 
@@ -38,8 +38,10 @@ const WORD_SIMILARITY = 0.55;
 /**
  * Поиск продуктов: общий справочник + личные продукты владельца.
  * Каждое слово запроса должно найтись (подстрокой или по сходству — опечатки,
- * падежи: «пармезана» → «пармезан»). Сортировка: свои продукты, совпадение
- * с началом названия, суммарное сходство, короткие названия выше.
+ * падежи: «пармезана» → «пармезан»). Сортировка: свои продукты; то, что
+ * пользователь уже записывал в дневник; совпадение с началом названия;
+ * суммарное сходство; полнота данных (сколько нутриентов известно);
+ * короткие названия выше.
  */
 export async function searchFoods(db: DB, ownerId: string, query: string, limit = 30): Promise<FoodResult[]> {
   const tokens = queryTokens(query);
@@ -54,6 +56,8 @@ export async function searchFoods(db: DB, ownerId: string, query: string, limit 
     sql` + `,
   );
   const startsWith = sql`(${foods.searchText} like ${tokens[0] + "%"})`;
+  const eaten = sql`least((select count(*) from ${entries} where ${entries.ownerId} = ${ownerId} and ${entries.foodId} = ${foods.id}), 5)`;
+  const completeness = sql`(select count(*) from jsonb_each(${foods.nutrientsPer100g}) where value <> 'null'::jsonb)`;
 
   const rows = await db
     .select(resultColumns)
@@ -61,8 +65,10 @@ export async function searchFoods(db: DB, ownerId: string, query: string, limit 
     .where(and(or(isNull(foods.ownerId), eq(foods.ownerId, ownerId)), ...perToken))
     .orderBy(
       sql`(${foods.ownerId} is not null) desc`,
+      sql`${eaten} desc`,
       sql`${startsWith} desc`,
       sql`(${score}) desc`,
+      sql`${completeness} desc`,
       sql`length(${foods.nameRu})`,
     )
     .limit(limit);

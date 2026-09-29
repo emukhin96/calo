@@ -84,7 +84,47 @@ export type UsdaSeedFood = {
   category: string;
   nameEn: string;
   nutrients: NutrientVector;
+  /** Вес одной штуки/ломтика — для «яйцо 2 шт». */
+  portion?: { grams: number; label: string };
 };
+
+// Поштучные порции USDA → русская подпись. Чашки, унции, ложки не берём.
+const PIECE_WORDS: [RegExp, string][] = [
+  [/\b(extra large|jumbo|large|medium|small|each|piece|pieces|fruit|egg|whole|unit)\b/i, "1 шт"],
+  [/\b(banana|onion|tomato(es)?|pepper|potato|apple|orange|carrot)\b/i, "1 шт"],
+  [/\bslice\b/i, "1 ломтик"],
+  [/\bfillet\b/i, "1 филе"],
+  [/\bsteak\b/i, "1 стейк"],
+  [/\bchop\b/i, "1 отбивная"],
+  [/\bbreast\b/i, "1 грудка"],
+  [/\b(drumstick|thigh|leg|wing)\b/i, "1 шт"],
+  [/\b(cookie|cracker|bar|muffin|roll|bagel|biscuit|waffle|pancake|tortilla|link|patty|sausage|frankfurter)\b/i, "1 шт"],
+  [/\b(clove)\b/i, "1 зубчик"],
+  [/\b(stalk|spear)\b/i, "1 стебель"],
+];
+const NOT_PIECE = /\b(cup|oz|tbsp|tsp|tablespoon|teaspoon|lb|can|package|serving|quart|pint|cubic|nlea|yield|container|jar|bottle|pat|stick|dash|pinch)\b/i;
+
+type PortionRow = { fdc_id: string; amount: string; measure_unit_id: string; modifier: string; portion_description: string; gram_weight: string };
+
+function piecePortion(rows: PortionRow[], units: Map<string, string>, nameEn: string): UsdaSeedFood["portion"] {
+  const candidates = rows.flatMap((r) => {
+    const unit = units.get(r.measure_unit_id) ?? "";
+    const text = `${unit === "undetermined" ? "" : unit} ${r.modifier} ${r.portion_description}`.trim();
+    const amount = Number(r.amount) || 1;
+    const grams = Number(r.gram_weight) / amount;
+    if (!(grams > 0) || NOT_PIECE.test(text)) return [];
+    const match = PIECE_WORDS.find(([re]) => re.test(text));
+    return match ? [{ text: text.toLowerCase(), grams, label: match[1] }] : [];
+  });
+  if (candidates.length === 0) return undefined;
+  // Яйца — «large» (≈ российская С1), остальное — «medium», иначе первая поштучная.
+  const prefer = /^egg/i.test(nameEn) ? ["large", "medium"] : ["medium", "large"];
+  const best =
+    prefer.map((w) => candidates.find((c) => new RegExp(`\\b${w}\\b`).test(c.text) && !/extra/.test(c.text))).find(Boolean) ??
+    candidates[0];
+  const grams = Math.round(best.grams);
+  return { grams, label: `${best.label} (${grams} г)` };
+}
 
 function csv(src: Src, file: string): Record<string, string>[] {
   const dir = path.join(CACHE, DATASETS[src].name, `FoodData_Central_${DATASETS[src].name}`);
@@ -125,6 +165,13 @@ function load(src: Src): UsdaSeedFood[] {
     m.set(Number(r.nutrient_id), Number(r.amount));
   }
 
+  const units = new Map(csv(src, "measure_unit.csv").map((r) => [r.id, r.name]));
+  const portions = new Map<string, PortionRow[]>();
+  for (const r of csv(src, "food_portion.csv") as PortionRow[]) {
+    if (!picked.has(r.fdc_id)) continue;
+    portions.set(r.fdc_id, [...(portions.get(r.fdc_id) ?? []), r]);
+  }
+
   const out: UsdaSeedFood[] = [];
   for (const [fdcId, f] of picked) {
     const v = values.get(fdcId) ?? new Map<number, number>();
@@ -138,7 +185,8 @@ function load(src: Src): UsdaSeedFood[] {
     // Омега-3 известна, если есть хотя бы ALA (основная часть в растительной еде).
     nutrients.omega3 = parts[0] == null ? null : round(parts.reduce<number>((s, x) => s + (x ?? 0), 0));
     if (nutrients.kcal == null || nutrients.protein == null) continue; // без КБЖУ бесполезно
-    out.push({ ref: `${src}:${fdcId}`, category: f.category, nameEn: f.nameEn, nutrients });
+    const portion = piecePortion(portions.get(fdcId) ?? [], units, f.nameEn);
+    out.push({ ref: `${src}:${fdcId}`, category: f.category, nameEn: f.nameEn, nutrients, ...(portion ? { portion } : {}) });
   }
   return out;
 }
@@ -164,7 +212,7 @@ function main() {
     "[\n" + foods.map((f) => JSON.stringify(f)).join(",\n") + "\n]\n",
   );
   const withMicros = foods.filter((f) => f.nutrients.vitC != null && f.nutrients.calcium != null).length;
-  console.log(`usda.json: ${foods.length} продуктов, с витаминами и минералами: ${withMicros}`);
+  console.log(`usda.json: ${foods.length} продуктов, с витаминами и минералами: ${withMicros}, с весом штуки: ${foods.filter((f) => f.portion).length}`);
 }
 
 main();
