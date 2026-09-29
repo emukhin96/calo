@@ -14,8 +14,8 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
-    # Команду разработчика Xcode подставит при первом входе (Signing & Capabilities);
-    # можно задать заранее: DEVELOPMENT_TEAM в ios/App/local.xcconfig.
+    # Personal Team (бесплатный Apple ID); Team ID не секрет.
+    DEVELOPMENT_TEAM: GSZALN8B43
 configs:
   Debug: debug
   Release: release
