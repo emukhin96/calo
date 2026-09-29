@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Раз в час (crontab.example): напоминания о разборе недели. Секрет CRON_SECRET
-# берётся из окружения контейнера — в аргументы командной строки не попадает.
+# Раз в час (crontab.example): напоминания о разборе недели. CRON_SECRET
+# подставляется внутри контейнера из его окружения — на хост не выходит.
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/lib.sh"
-$COMPOSE exec -T calc-web sh -c '
-  printf "Authorization: Bearer %s\r\n" "$CRON_SECRET" > /tmp/cron-auth
-  wget -qO- --header="$(cat /tmp/cron-auth)" --post-data="" http://127.0.0.1:3000/api/cron/weekly
-  rm -f /tmp/cron-auth
-'
+printf '%s ' "$(date -u +%FT%TZ)"
+$COMPOSE exec -T calc-web sh -c 'wget -qO- --header="Authorization: Bearer $CRON_SECRET" --post-data="" http://127.0.0.1:3000/api/cron/weekly'
 echo
