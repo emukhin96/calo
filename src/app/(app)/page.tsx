@@ -47,13 +47,13 @@ export default async function TodayPage() {
         данные демонстрационные — дневник появится на этапе 2
       </p>
 
-      <button
-        type="button"
+      <Link
+        href="/add"
         aria-label="Добавить еду"
         className="fixed right-6 bottom-[calc(24px+env(safe-area-inset-bottom))] flex size-16 items-center justify-center rounded-full bg-accent text-[34px] leading-none text-white shadow-lg shadow-accent/30"
       >
         +
-      </button>
+      </Link>
     </main>
   );
 }

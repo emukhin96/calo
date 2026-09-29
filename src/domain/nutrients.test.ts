@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coverage, scale, sum } from "./nutrients";
+import { coverage, isLabelConsistent, scale, sum } from "./nutrients";
 
 describe("scale", () => {
   it("пересчитывает на 100 г в порцию", () => {
@@ -28,5 +28,22 @@ describe("sum", () => {
 describe("coverage", () => {
   it("доля слагаемых с известным значением", () => {
     expect(coverage([{ vitD: 1 }, { vitD: null }, {}, { vitD: 0 }], "vitD")).toBe(0.5);
+  });
+});
+
+describe("isLabelConsistent", () => {
+  it("нормальная этикетка сходится", () => {
+    expect(isLabelConsistent({ kcal: 356, protein: 14.5, fat: 1.6, carbs: 69.5, fiber: 3 })).toBe(true);
+    expect(isLabelConsistent({ kcal: 121, protein: 16, fat: 5, carbs: 3 })).toBe(true);
+    expect(isLabelConsistent({ kcal: 0, protein: 0, fat: 0, carbs: 0 })).toBe(true);
+  });
+
+  it("опечатка в белке или углеводах — не сходится", () => {
+    expect(isLabelConsistent({ kcal: 356, protein: 0.1, fat: 0.9, carbs: 62 })).toBe(false);
+    expect(isLabelConsistent({ kcal: 375, protein: 16.1, fat: 3.6, carbs: 21.4 })).toBe(false);
+  });
+
+  it("без БЖУ — не сходится", () => {
+    expect(isLabelConsistent({ kcal: 100 })).toBe(false);
   });
 });

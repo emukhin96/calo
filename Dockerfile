@@ -9,9 +9,7 @@ RUN pnpm install --frozen-lockfile
 
 FROM deps AS build
 COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1 \
-    # instrumentation.ts при сборке применяет миграции — пусть к одноразовой PGlite
-    DATABASE_URL=pglite:/tmp/build-pg
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
 FROM node:22-alpine AS run
@@ -29,6 +27,8 @@ COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
+# Базовый справочник продуктов: загружается в БД при старте (src/db/seed-foods.ts)
+COPY --from=build --chown=node:node /app/seed ./seed
 RUN mkdir -p /app/data/photos && chown -R node:node /app/data
 USER node
 EXPOSE 3000

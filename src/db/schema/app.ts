@@ -44,6 +44,7 @@ export const foods = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     ownerId: text("owner_id").references(() => user.id, { onDelete: "cascade" }),
     nameRu: text("name_ru").notNull(),
+    nameEn: text("name_en"),
     aliases: text("aliases").array().notNull().default(sql`'{}'::text[]`),
     brand: text("brand"),
     source: foodSource("source").notNull(),
@@ -51,11 +52,14 @@ export const foods = pgTable(
     nutrientsPer100g: nutrients("nutrients_per_100g"),
     defaultPortionG: real("default_portion_g"),
     portionLabel: text("portion_label"),
+    /** Нормализованный текст для поиска (src/domain/search.ts), пишется вместе с записью. */
+    searchText: text("search_text").notNull().default(""),
     createdAt: createdAt(),
   },
   (t) => [
     index("foods_owner_idx").on(t.ownerId),
     uniqueIndex("foods_source_ref_idx").on(t.source, t.sourceRef),
+    index("foods_search_trgm_idx").using("gin", sql`${t.searchText} gin_trgm_ops`),
   ],
 );
 
@@ -194,3 +198,10 @@ export const aiUsage = pgTable(
   },
   (t) => [primaryKey({ columns: [t.ownerId, t.day] })],
 );
+
+/** Служебные ключ-значение: версия загруженного справочника продуктов и т. п. */
+export const appMeta = pgTable("app_meta", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

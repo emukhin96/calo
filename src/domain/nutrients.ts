@@ -13,6 +13,19 @@ export const NUTRIENT_KEYS = [...MACROS, ...MICROS] as const;
 export type NutrientKey = (typeof NUTRIENT_KEYS)[number];
 export type NutrientVector = Partial<Record<NutrientKey, number | null>>;
 
+/** Единицы хранения (на 100 г продукта). Совпадают с USDA — пересчёта при импорте нет. */
+export const NUTRIENT_UNITS: Record<NutrientKey, "kcal" | "g" | "mg" | "µg"> = {
+  kcal: "kcal", protein: "g", fat: "g", carbs: "g", fiber: "g", sugar: "g",
+  vitA: "µg", // RAE
+  vitC: "mg", vitD: "µg", vitE: "mg", vitK: "µg",
+  b1: "mg", b2: "mg", b6: "mg",
+  b9: "µg", // DFE
+  b12: "µg",
+  calcium: "mg", iron: "mg", magnesium: "mg", potassium: "mg", sodium: "mg", zinc: "mg",
+  selenium: "µg",
+  omega3: "g", // ALA + EPA + DPA + DHA
+};
+
 /** Нутриенты порции из значений на 100 г. */
 export function scale(per100g: NutrientVector, grams: number): NutrientVector {
   const k = grams / 100;
@@ -52,4 +65,16 @@ export function sum(vectors: NutrientVector[]): NutrientVector {
 export function coverage(vectors: NutrientVector[], key: NutrientKey): number {
   if (vectors.length === 0) return 0;
   return vectors.filter((v) => v[key] != null).length / vectors.length;
+}
+
+/**
+ * Сходится ли этикетка: 4·Б + 9·Ж + 4·У (+ 2·клетчатка) ≈ ккал. Отсекает опечатки
+ * в Open Food Facts вроде «белок 0,1 г» у макарон. Допуск ±20% (не меньше 20 ккал):
+ * полиолы, спирт и округления на этикетке дают расхождение.
+ */
+export function isLabelConsistent(n: NutrientVector): boolean {
+  const { kcal, protein, fat, carbs, fiber } = n;
+  if (kcal == null || protein == null || fat == null || carbs == null) return false;
+  const estimate = 4 * protein + 9 * fat + 4 * carbs + 2 * (fiber ?? 0);
+  return Math.abs(estimate - kcal) <= Math.max(20, 0.2 * kcal);
 }

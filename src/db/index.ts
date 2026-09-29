@@ -1,5 +1,6 @@
 import "server-only";
 import { PGlite } from "@electric-sql/pglite";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { Pool } from "pg";
@@ -17,7 +18,7 @@ export type DB = NodePgDatabase<typeof schema>;
 function createDb(): { db: DB; driver: "pg" | "pglite"; close: () => Promise<void> } {
   const url = process.env.DATABASE_URL ?? "pglite:./.data/pg";
   if (url.startsWith("pglite:")) {
-    const client = new PGlite(url.slice("pglite:".length) || undefined);
+    const client = new PGlite({ dataDir: url.slice("pglite:".length) || undefined, extensions: { pg_trgm } });
     const db = drizzlePglite(client, { schema }) as unknown as DB;
     return { db, driver: "pglite", close: () => client.close() };
   }
