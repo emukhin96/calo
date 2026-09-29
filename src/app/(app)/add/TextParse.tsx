@@ -11,6 +11,7 @@ import { notifyChanged } from "@/lib/native";
 import { postEntry } from "@/lib/offline";
 import { Button, Eyebrow } from "@/ui/components";
 import { formatInt, plural } from "@/ui/format";
+import { PickFoodSheet } from "@/ui/PickFoodSheet";
 
 type Row = ParsedItem & { key: string; foodId: string | null; gramsText: string; skip: boolean };
 
@@ -20,11 +21,13 @@ const fmt = (x: number | null | undefined) => (x == null ? "—" : x.toLocaleStr
 
 /**
  * Вкладка «Текст»: свободное описание → /api/parse/text → экран подтверждения
- * (позиции, граммы, выбор из топ-3 продуктов) → записи в дневник.
+ * (позиции, граммы, выбор из топ-3 продуктов или любого через лист поиска) → записи в дневник.
  * Нутриенты берутся из выбранного продукта справочника, ИИ их не оценивает.
  */
-export function TextParse({ date, meal, onSearch }: { date: string; meal: Meal; onSearch: (query: string) => void }) {
+export function TextParse({ date, meal }: { date: string; meal: Meal }) {
   const router = useRouter();
+  /** Позиция, для которой открыт лист «другой продукт». */
+  const [picking, setPicking] = useState<Row | null>(null);
   const [text, setText] = useState("");
   const [rows, setRows] = useState<Row[] | null>(null);
   const [source, setSource] = useState<ParseTextResponse["source"] | null>(null);
@@ -69,6 +72,12 @@ export function TextParse({ date, meal, onSearch }: { date: string; meal: Meal; 
   }
 
   const update = (key: string, patch: Partial<Row>) => setRows((rs) => rs?.map((r) => (r.key === key ? { ...r, ...patch } : r)) ?? null);
+
+  /** «другой…»: выбранный в листе продукт становится кандидатом позиции и сразу выбирается. */
+  function replaceFood(row: Row, f: FoodResult) {
+    update(row.key, { foodId: f.id, candidates: [f, ...row.candidates.filter((c) => c.id !== f.id)].slice(0, 4) });
+    setPicking(null);
+  }
 
   const food = (r: Row): FoodResult | null => r.candidates.find((c) => c.id === r.foodId) ?? null;
   const grams = (r: Row) => {
@@ -196,7 +205,7 @@ export function TextParse({ date, meal, onSearch }: { date: string; meal: Meal; 
                       ))}
                       <button
                         type="button"
-                        onClick={() => onSearch(r.name)}
+                        onClick={() => setPicking(r)}
                         className="rounded-full border border-dashed border-line px-3 py-1 text-[13px] font-semibold text-accent"
                       >
                         другой…
@@ -205,7 +214,7 @@ export function TextParse({ date, meal, onSearch }: { date: string; meal: Meal; 
                   ) : (
                     <p className="mt-2 text-[14px] text-ink-2">
                       В справочнике не нашлось.{" "}
-                      <button type="button" className="font-semibold text-accent" onClick={() => onSearch(r.name)}>
+                      <button type="button" className="font-semibold text-accent" onClick={() => setPicking(r)}>
                         Найти вручную →
                       </button>
                     </p>
@@ -251,6 +260,15 @@ export function TextParse({ date, meal, onSearch }: { date: string; meal: Meal; 
       <Button className="mt-4" disabled={busy != null || ready.length === 0} onClick={save}>
         {busy === "save" ? "Сохраняю…" : `Добавить ${ready.length} ${plural(ready.length, ["позицию", "позиции", "позиций"])}`}
       </Button>
+
+      {picking && (
+        <PickFoodSheet
+          title={picking.name}
+          initialQuery={picking.name}
+          onPick={(f) => replaceFood(picking, f)}
+          onClose={() => setPicking(null)}
+        />
+      )}
     </div>
   );
 }

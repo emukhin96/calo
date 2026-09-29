@@ -3,7 +3,7 @@ import "server-only";
 /**
  * Клиент Gemini API (generateContent) со строгим JSON-ответом по схеме.
  * Ключ — GEMINI_API_KEY из /opt/calc/.env (deploy/vps/set-secret.sh); модель —
- * GEMINI_MODEL, по умолчанию быстрая lite-модель (~1 с на разбор строки).
+ * GEMINI_MODEL, по умолчанию быстрая lite-модель (~3 с на разбор строки).
  * ИИ никогда не считает нутриенты — только превращает текст в список позиций.
  */
 
@@ -22,7 +22,9 @@ export type JsonSchema = Record<string, unknown>;
 
 export type GenerateJson = (req: { system: string; user: string; schema: JsonSchema }) => Promise<unknown>;
 
-export const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+// 3.1-flash-lite: ~3 с на разбор строки; 3.5-flash-lite на тех же запросах отдавал 11–14 с,
+// 3.5-flash тратит ~1300 токенов на размышления (25 с), 3.8-flash часто отвечает 503 (перегрузка).
+export const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export const aiEnabled = () => Boolean(process.env.GEMINI_API_KEY);

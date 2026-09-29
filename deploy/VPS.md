@@ -45,7 +45,7 @@ read -rs -p "Ключ Claude API: " KEY; echo; printf '%s\n' "$KEY" | ssh calc /
 ```
 
 То же для `SMTP_URL` и `GEMINI_API_KEY` (`scripts/set-gemini-key.command`). Необязательные
-переменные ИИ: `GEMINI_MODEL` (по умолчанию `gemini-3.5-flash-lite`; модели 2.5 для новых
+переменные ИИ: `GEMINI_MODEL` (по умолчанию `gemini-3.1-flash-lite`; модели 2.5 для новых
 ключей закрыты) и `AI_DAILY_LIMIT` (запросов на пользователя в день, по умолчанию 60).
 Остальное в `.env` — `ssh calc`, `nano /opt/calc/.env`,
 затем `deploy.sh` с текущим sha (`cat /opt/calc/.version.env`).

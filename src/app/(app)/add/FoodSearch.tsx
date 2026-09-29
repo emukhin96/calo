@@ -271,15 +271,7 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
 
       {/* Вкладка «Текст» не размонтируется: разобранный список переживает переход в «Продукт» и обратно. */}
       <div hidden={tab !== "text"}>
-        <TextParse
-          date={date}
-          meal={meal}
-          onSearch={(query) => {
-            // «Найти вручную»: тот же поиск, что во вкладке «Продукт», с названием позиции.
-            setTab("food");
-            onQueryChange(query);
-          }}
-        />
+        <TextParse date={date} meal={meal} />
       </div>
       {tab === "text" ? null : tab === "recipes" ? (
         <>
