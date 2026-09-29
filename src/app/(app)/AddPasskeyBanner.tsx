@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { isNative } from "@/lib/native";
 
 /** После первого входа по ссылке предлагает включить вход по Face ID. */
 export function AddPasskeyBanner() {
@@ -9,7 +10,8 @@ export function AddPasskeyBanner() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!window.PublicKeyCredential) return;
+    // В iOS-приложении passkey в WebView не работает без Associated Domains — не предлагаем.
+    if (!window.PublicKeyCredential || isNative()) return;
     authClient.passkey.listUserPasskeys().then(({ data }) => setShow((data?.length ?? 0) === 0));
   }, []);
 

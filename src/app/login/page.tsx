@@ -59,11 +59,15 @@ export default function LoginPage() {
         </Button>
       )}
 
-      <div className="my-8 flex items-center gap-4 text-ink-3">
-        <div className="h-px flex-1 bg-line" />
-        <span className="font-mono text-[13px] tracking-[0.06em]">или по ссылке</span>
-        <div className="h-px flex-1 bg-line" />
-      </div>
+      {native ? (
+        <div className="h-8" />
+      ) : (
+        <div className="my-8 flex items-center gap-4 text-ink-3">
+          <div className="h-px flex-1 bg-line" />
+          <span className="font-mono text-[13px] tracking-[0.06em]">или по ссылке</span>
+          <div className="h-px flex-1 bg-line" />
+        </div>
+      )}
 
       {state === "sent" ? (
         <p className="text-[17px] leading-relaxed text-ink-2">

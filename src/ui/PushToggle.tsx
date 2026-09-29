@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isNative } from "@/lib/native";
 
-type State = "loading" | "unsupported" | "ios-install" | "denied" | "off" | "on" | "unconfigured";
+type State = "loading" | "unsupported" | "ios-install" | "native" | "denied" | "off" | "on" | "unconfigured";
 
 function urlBase64ToUint8Array(base64: string) {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -18,6 +19,8 @@ export function PushToggle() {
 
   useEffect(() => {
     (async () => {
+      // В iOS-приложении Web Push нет (WKWebView), а свои уведомления — позже.
+      if (isNative()) return setState("native");
       const standalone = window.matchMedia("(display-mode: standalone)").matches;
       const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
       if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
@@ -85,6 +88,7 @@ export function PushToggle() {
     loading: "",
     unsupported: "Этот браузер не поддерживает уведомления.",
     "ios-install": "На iPhone уведомления работают, когда Calo добавлен на экран «Домой» (Поделиться → На экран «Домой»), iOS 16.4+.",
+    native: "В приложении напоминаний пока нет — разбор недели откроется сам при первом входе в понедельник.",
     denied: "Уведомления запрещены. Разрешите их в настройках: Настройки → Уведомления → Calo.",
     unconfigured: "Уведомления на сервере ещё не настроены.",
     off: "В понедельник утром — «Разбор недели готов».",

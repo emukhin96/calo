@@ -8,6 +8,7 @@ import { requireSession } from "@/lib/session";
 import { userTimeZone } from "@/lib/tz";
 import { BigNumber, Eyebrow, MacroBar } from "@/ui/components";
 import { formatInt } from "@/ui/format";
+import { HealthBanner } from "@/ui/HealthBanner";
 import { TimeZoneSync } from "@/ui/TimeZoneSync";
 import { AddPasskeyBanner } from "./AddPasskeyBanner";
 import { EntryList } from "./EntryList";
@@ -60,6 +61,7 @@ export default async function DayPage({ searchParams }: PageProps<"/">) {
       <Eyebrow className="mt-2">{remaining(totals.kcal ?? 0, norms.kcal, norms.kcalRange)}</Eyebrow>
 
       <AddPasskeyBanner />
+      <HealthBanner />
 
       <div className="mt-6 space-y-4">
         <MacroBar label="Белки" value={totals.protein ?? 0} norm={norms.nutrients.protein!.value} color="var(--color-protein)" />

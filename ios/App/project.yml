@@ -46,8 +46,13 @@ targets:
         embed: true
         codeSign: true
       - sdk: HealthKit.framework
+    # Права задаются здесь: XcodeGen перезаписывает файл при каждой генерации.
     entitlements:
       path: App/App.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+        com.apple.security.application-groups: [group.am.egor.calo]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: am.egor.calo
@@ -70,6 +75,8 @@ targets:
       - path: Shared
     entitlements:
       path: CaloWidget/CaloWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.am.egor.calo]
     dependencies:
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
