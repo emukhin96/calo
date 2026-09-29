@@ -160,7 +160,11 @@ export const weightLog = pgTable(
     source: weightSource("source").notNull().default("manual"),
     externalId: text("external_id"),
   },
-  (t) => [index("weight_log_owner_measured_idx").on(t.ownerId, t.measuredAt)],
+  (t) => [
+    index("weight_log_owner_measured_idx").on(t.ownerId, t.measuredAt),
+    // Взвешивание из Apple Health импортируется один раз (UUID замера HealthKit).
+    uniqueIndex("weight_log_owner_external_idx").on(t.ownerId, t.externalId).where(sql`${t.externalId} is not null`),
+  ],
 );
 
 /** Ручная правка любой нормы (ключ — ключ NutrientVector). */

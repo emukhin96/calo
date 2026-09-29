@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { amountToGrams, parseAmount } from "@/domain/amount";
+import { notifyChanged } from "@/lib/native";
 import { cacheGet, cacheSet, postEntry } from "@/lib/offline";
 import type { Meal } from "@/domain/day";
 import type { FoodResult } from "@/db/foods";
@@ -190,6 +191,7 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
       window.location.assign(`/?d=${date}`);
       return;
     }
+    notifyChanged();
     router.push(`/?d=${date}`);
     router.refresh();
   }

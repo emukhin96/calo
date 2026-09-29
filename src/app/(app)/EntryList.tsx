@@ -7,6 +7,7 @@ import type { Entry } from "@/db/entries";
 import type { Meal } from "@/domain/day";
 import { NUTRIENT_KEYS, type NutrientVector, sum } from "@/domain/nutrients";
 import { formatInt } from "@/ui/format";
+import { health, notifyChanged } from "@/lib/native";
 import { PortionSheet } from "@/ui/PortionSheet";
 
 type MealGroup = { meal: Meal; title: string; entries: Entry[] };
@@ -35,6 +36,7 @@ export function EntryList({ date, meals }: { date: string; meals: MealGroup[] })
     });
     if (!res.ok) throw new Error("save failed");
     setEditing(null);
+    notifyChanged();
     router.refresh();
   }
 
@@ -59,7 +61,9 @@ export function EntryList({ date, meals }: { date: string; meals: MealGroup[] })
   async function remove() {
     const res = await fetch(`/api/entries/${editing!.id}`, { method: "DELETE" });
     if (!res.ok && res.status !== 404) throw new Error("delete failed");
+    void health.deleteEntry(editing!.id); // из «Здоровья» — сразу, не дожидаясь синхронизации
     setEditing(null);
+    notifyChanged();
     router.refresh();
   }
 

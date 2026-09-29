@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "weight_log_owner_external_idx" ON "weight_log" USING btree ("owner_id","external_id") WHERE "weight_log"."external_id" is not null;

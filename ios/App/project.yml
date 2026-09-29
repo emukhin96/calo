@@ -1,0 +1,94 @@
+# Проект Xcode генерируется из этого файла: `xcodegen` в ios/App (scripts/ios.sh).
+# App.xcodeproj в git не хранится — только project.yml. Capacitor подключён
+# локальным пакетом CapApp-SPM (его обновляет `cap sync`).
+name: App
+options:
+  bundleIdPrefix: am.egor
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  developmentLanguage: ru
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    # Команду разработчика Xcode подставит при первом входе (Signing & Capabilities);
+    # можно задать заранее: DEVELOPMENT_TEAM в ios/App/local.xcconfig.
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: ../debug.xcconfig
+packages:
+  CapApp-SPM:
+    path: CapApp-SPM
+targets:
+  App:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: App
+        excludes: [public, "*.entitlements", config.xml, capacitor.config.json]
+      - path: Shared
+      - path: App/public
+        type: folder
+        buildPhase: resources
+      - path: App/config.xml
+        buildPhase: resources
+      - path: App/capacitor.config.json
+        buildPhase: resources
+    dependencies:
+      - package: CapApp-SPM
+      - target: CaloWidget
+        embed: true
+        codeSign: true
+      - sdk: HealthKit.framework
+    entitlements:
+      path: App/App.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: am.egor.calo
+        PRODUCT_NAME: App
+        INFOPLIST_FILE: App/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/Frameworks"]
+      configs:
+        Debug:
+          OTHER_SWIFT_FLAGS: "$(inherited) -DDEBUG"
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+  CaloWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: CaloWidget
+        excludes: ["*.entitlements", Info.plist]
+      - path: Shared
+    entitlements:
+      path: CaloWidget/CaloWidget.entitlements
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+      - sdk: AppIntents.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: am.egor.calo.widget
+        PRODUCT_NAME: CaloWidget
+        INFOPLIST_FILE: CaloWidget/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks"]
+schemes:
+  App:
+    build:
+      targets:
+        App: all
+        CaloWidget: all
+    run:
+      config: Debug
+    archive:
+      config: Release

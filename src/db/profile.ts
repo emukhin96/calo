@@ -56,8 +56,17 @@ export async function setGoal(db: DB, ownerId: string, input: GoalInput): Promis
   await db.insert(goals).values({ ownerId, kind: input.kind, rateKgPerWeek: rate, targetWeightKg: input.targetWeightKg });
 }
 
-export async function addWeight(db: DB, ownerId: string, kg: number, measuredAt = new Date()): Promise<void> {
-  await db.insert(weightLog).values({ ownerId, weightKg: kg, measuredAt, source: "manual" });
+export async function addWeight(
+  db: DB,
+  ownerId: string,
+  kg: number,
+  measuredAt = new Date(),
+  from: { source: "manual" | "apple_health"; externalId?: string } = { source: "manual" },
+): Promise<void> {
+  await db
+    .insert(weightLog)
+    .values({ ownerId, weightKg: kg, measuredAt, source: from.source, externalId: from.externalId ?? null })
+    .onConflictDoNothing(); // повторный импорт того же замера из Health — без дублей
 }
 
 export async function weightHistory(db: DB, ownerId: string, limit = 60) {

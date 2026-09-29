@@ -47,6 +47,13 @@ describe("профиль и нормы", () => {
     expect((await weightHistory(db, ME)).map((w) => w.kg)).toEqual([80, 79.2]);
   });
 
+  it("вес из Apple Health: повторный импорт того же замера не дублирует", async () => {
+    const at = new Date("2026-09-21T07:00:00Z");
+    await addWeight(db, ME, 79.0, at, { source: "apple_health", externalId: "HK-1" });
+    await addWeight(db, ME, 79.0, at, { source: "apple_health", externalId: "HK-1" });
+    expect((await weightHistory(db, ME)).filter((w) => w.kg === 79.0)).toHaveLength(1);
+  });
+
   it("ручная норма и её отмена", async () => {
     await setOverride(db, ME, "kcal", 2000);
     await setOverride(db, ME, "protein", 150);

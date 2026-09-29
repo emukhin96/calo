@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useIsNative } from "@/lib/native";
 import { authClient } from "@/lib/auth-client";
 import { Button, Eyebrow } from "@/ui/components";
 
@@ -10,6 +11,20 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [error, setError] = useState("");
+  const native = useIsNative();
+  const [pasted, setPasted] = useState("");
+
+  /** В приложении ссылка из письма откроется в Safari — её вставляют сюда. */
+  function openPasted(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const url = new URL(pasted.trim());
+      if (url.origin !== location.origin || !url.pathname.startsWith("/api/auth/magic-link/verify")) throw new Error();
+      location.assign(url.href);
+    } catch {
+      setError("Это не ссылка для входа в Calo.");
+    }
+  }
 
   async function sendLink(e: React.FormEvent) {
     e.preventDefault();
@@ -38,9 +53,11 @@ export default function LoginPage() {
       <Eyebrow>Calo</Eyebrow>
       <h1 className="mt-2 font-display text-[40px] leading-tight font-extrabold">Вход</h1>
 
-      <Button type="button" onClick={signInWithPasskey} className="mt-10">
-        Войти с Face ID
-      </Button>
+      {!native && (
+        <Button type="button" onClick={signInWithPasskey} className="mt-10">
+          Войти с Face ID
+        </Button>
+      )}
 
       <div className="my-8 flex items-center gap-4 text-ink-3">
         <div className="h-px flex-1 bg-line" />
@@ -71,6 +88,23 @@ export default function LoginPage() {
           >
             {state === "sending" ? "Отправляю…" : "Прислать ссылку"}
           </button>
+        </form>
+      )}
+
+      {native && (
+        <form onSubmit={openPasted} className="mt-8 space-y-3">
+          <p className="text-[15px] text-ink-2">Получили ссылку? Скопируйте её и вставьте сюда — вход будет в приложении.</p>
+          <input
+            type="url"
+            inputMode="url"
+            placeholder="https://calc.egor.am/api/auth/magic-link/…"
+            value={pasted}
+            onChange={(e) => setPasted(e.target.value)}
+            className="h-[52px] w-full rounded-2xl border border-line bg-surface px-4 text-[15px] outline-none focus:border-accent"
+          />
+          <Button type="submit" disabled={!pasted.trim()}>
+            Войти по ссылке
+          </Button>
         </form>
       )}
 

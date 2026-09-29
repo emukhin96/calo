@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { notifyChanged } from "@/lib/native";
 import { flushQueue, QUEUE_EVENT, queued } from "@/lib/offline";
 import { plural } from "./format";
 
@@ -19,7 +20,10 @@ export function OfflineSync() {
     const flush = async () => {
       update();
       if (!navigator.onLine || queued().length === 0) return;
-      if ((await flushQueue()) > 0) router.refresh();
+      if ((await flushQueue()) > 0) {
+        notifyChanged();
+        router.refresh();
+      }
       update();
     };
     flush();

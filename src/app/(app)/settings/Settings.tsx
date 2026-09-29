@@ -11,6 +11,7 @@ import { Button, Eyebrow, SectionTitle } from "@/ui/components";
 import { NumberField, OptionCard, parseNum, Segmented } from "@/ui/form";
 import { formatInt } from "@/ui/format";
 import { fmtAmount, NUTRIENT_LABELS, unitRu } from "@/ui/nutrients";
+import { HealthToggle } from "@/ui/HealthToggle";
 import { PushToggle } from "@/ui/PushToggle";
 
 type Weight = { id: string; kg: number; at: string };
@@ -159,6 +160,8 @@ export function Settings(p: Props) {
 
       <WeightSection weights={p.weights} />
       <NormsSection norms={p.norms} overrides={p.overrides} />
+
+      <HealthToggle />
 
       <SectionTitle>Уведомления</SectionTitle>
       <PushToggle />
