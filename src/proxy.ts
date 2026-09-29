@@ -12,6 +12,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Всё, кроме входа, API, статики, иконок, манифеста и service worker.
-  matcher: ["/((?!login|api|_next/static|_next/image|pwa-icon|icon|apple-icon|manifest.webmanifest|sw.js).*)"],
+  // Всё, кроме входа, API, статики, иконок, манифеста, service worker и распознавателя штрихкодов.
+  matcher: ["/((?!login|api|_next/static|_next/image|pwa-icon|icon|apple-icon|manifest.webmanifest|sw.js|wasm/).*)"],
 };
