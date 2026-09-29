@@ -8,7 +8,8 @@ const config: CapacitorConfig = {
   // Запасная страница, если сайт недоступен (нет сети при первом запуске).
   webDir: "native/www",
   server: {
-    url: "https://calc.egor.am",
+    // Для проверки в симуляторе на локальном сервере: CALO_URL=http://localhost:3000 pnpm ios
+    url: process.env.CALO_URL ?? "https://calc.egor.am",
     errorPath: "index.html",
   },
   ios: {

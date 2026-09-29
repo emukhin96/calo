@@ -51,6 +51,12 @@
 	<array>
 		<string>arm64</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- только localhost/локальная сеть — для отладки с pnpm dev; прод по HTTPS -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Calo берёт из «Здоровья» ваш вес, чтобы пересчитывать нормы.</string>
 	<key>NSHealthUpdateUsageDescription</key>
