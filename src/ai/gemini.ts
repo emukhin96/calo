@@ -1,0 +1,76 @@
+import "server-only";
+
+/**
+ * Клиент Gemini API (generateContent) со строгим JSON-ответом по схеме.
+ * Ключ — GEMINI_API_KEY из /opt/calc/.env (deploy/vps/set-secret.sh); модель —
+ * GEMINI_MODEL, по умолчанию быстрая lite-модель (~1 с на разбор строки).
+ * ИИ никогда не считает нутриенты — только превращает текст в список позиций.
+ */
+
+export type AiErrorKind = "no_key" | "quota" | "blocked" | "bad_response" | "unavailable";
+
+export class AiError extends Error {
+  constructor(
+    public kind: AiErrorKind,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export type JsonSchema = Record<string, unknown>;
+
+export type GenerateJson = (req: { system: string; user: string; schema: JsonSchema }) => Promise<unknown>;
+
+export const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
+
+export const aiEnabled = () => Boolean(process.env.GEMINI_API_KEY);
+
+type GeminiResponse = {
+  candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
+  promptFeedback?: { blockReason?: string };
+  error?: { message?: string };
+};
+
+/** Один запрос к Gemini; 429/5xx — одна повторная попытка через секунду. */
+export const generateJson: GenerateJson = async ({ system, user, schema }) => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new AiError("no_key", "GEMINI_API_KEY не задан");
+  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL;
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    generationConfig: { temperature: 0.1, responseMimeType: "application/json", responseJsonSchema: schema },
+  });
+
+  let res: Response | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 1000));
+    try {
+      res = await fetch(`${ENDPOINT}/${model}:generateContent`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": key },
+        body,
+        signal: AbortSignal.timeout(25_000),
+      });
+    } catch (e) {
+      if (attempt) throw new AiError("unavailable", `Gemini недоступен: ${(e as Error).message}`);
+      continue;
+    }
+    if (res.status !== 429 && res.status < 500) break;
+  }
+  if (!res) throw new AiError("unavailable", "Gemini недоступен");
+
+  const data = (await res.json().catch(() => ({}))) as GeminiResponse;
+  if (res.status === 429) throw new AiError("quota", "квота Gemini исчерпана");
+  if (!res.ok) throw new AiError("unavailable", `Gemini HTTP ${res.status}: ${data.error?.message ?? ""}`);
+  if (data.promptFeedback?.blockReason) throw new AiError("blocked", `запрос отклонён: ${data.promptFeedback.blockReason}`);
+
+  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new AiError("bad_response", "Gemini вернул не JSON");
+  }
+};

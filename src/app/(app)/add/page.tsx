@@ -6,8 +6,8 @@ import { Eyebrow } from "@/ui/components";
 import { FoodSearch } from "./FoodSearch";
 
 /**
- * «Добавить» — вкладка «Продукт»: поиск по справочнику → порция → запись.
- * /add?d=2026-09-29&meal=lunch. Шаблоны, рецепт и фото — этапы 4, 6, 7.
+ * «Добавить»: «Продукт» — поиск по справочнику → порция → запись; «Текст» — разбор
+ * описания через Gemini (этап 6); «Мои блюда». /add?d=2026-09-29&meal=lunch. Фото — этап 7.
  */
 export default async function AddPage({ searchParams }: PageProps<"/add">) {
   const session = await requireSession();

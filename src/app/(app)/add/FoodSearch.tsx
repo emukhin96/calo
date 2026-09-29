@@ -14,6 +14,7 @@ import { fmtAmount, NUTRIENT_LABELS, unitRu } from "@/ui/nutrients";
 import { Eyebrow } from "@/ui/components";
 import { BarcodeScanner } from "@/ui/BarcodeScanner";
 import { PortionSheet } from "@/ui/PortionSheet";
+import { TextParse } from "./TextParse";
 
 type OffItem = { code: string; nameRu: string; brand: string | null; nutrientsPer100g: NutrientVector };
 
@@ -73,7 +74,7 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
   const [off, setOff] = useState<OffItem[] | null>(null);
   const [offState, setOffState] = useState<"idle" | "loading" | "error">("idle");
   const [open, setOpen] = useState<string | null>(null);
-  const [tab, setTab] = useState<"food" | "recipes">("food");
+  const [tab, setTab] = useState<"food" | "recipes" | "text">("food");
   const [recipes, setRecipes] = useState<RecipeSummary[] | null>(null);
   const [foundRecipes, setFoundRecipes] = useState<RecipeSummary[]>([]);
   const [picked, setPicked] = useState<Picked | null>(null);
@@ -249,10 +250,11 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
 
   return (
     <div>
-      <div className="mb-4 grid grid-cols-2 gap-1 rounded-2xl bg-line/60 p-1">
+      <div className="mb-4 grid grid-cols-3 gap-1 rounded-2xl bg-line/60 p-1">
         {(
           [
             ["food", "Продукт"],
+            ["text", "Текст"],
             ["recipes", `Мои блюда${recipes?.length ? ` · ${recipes.length}` : ""}`],
           ] as const
         ).map(([t, label]) => (
@@ -267,7 +269,19 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
         ))}
       </div>
 
-      {tab === "recipes" ? (
+      {/* Вкладка «Текст» не размонтируется: разобранный список переживает переход в «Продукт» и обратно. */}
+      <div hidden={tab !== "text"}>
+        <TextParse
+          date={date}
+          meal={meal}
+          onSearch={(query) => {
+            // «Найти вручную»: тот же поиск, что во вкладке «Продукт», с названием позиции.
+            setTab("food");
+            onQueryChange(query);
+          }}
+        />
+      </div>
+      {tab === "text" ? null : tab === "recipes" ? (
         <>
           {recipes && recipes.length > 0 ? (
             <ul className="divide-y divide-line">{recipes.map(recipeRow)}</ul>

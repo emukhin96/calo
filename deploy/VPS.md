@@ -44,7 +44,10 @@ ssh calc '/opt/calc/deploy/vps/deploy.sh <sha>'                        # отк�
 read -rs -p "Ключ Claude API: " KEY; echo; printf '%s\n' "$KEY" | ssh calc /opt/calc/deploy/vps/set-secret.sh ANTHROPIC_API_KEY; unset KEY
 ```
 
-То же для `SMTP_URL`. Остальное в `.env` — `ssh calc`, `nano /opt/calc/.env`,
+То же для `SMTP_URL` и `GEMINI_API_KEY` (`scripts/set-gemini-key.command`). Необязательные
+переменные ИИ: `GEMINI_MODEL` (по умолчанию `gemini-3.5-flash-lite`; модели 2.5 для новых
+ключей закрыты) и `AI_DAILY_LIMIT` (запросов на пользователя в день, по умолчанию 60).
+Остальное в `.env` — `ssh calc`, `nano /opt/calc/.env`,
 затем `deploy.sh` с текущим sha (`cat /opt/calc/.version.env`).
 
 ## Первичная настройка (уже сделано)
