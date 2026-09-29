@@ -1,7 +1,7 @@
-# Стек calc на VPS (72.56.93.77, 1 vCPU / 1 ГБ). Запускает deploy.sh:
+# Стек calc на VPS (Hetzner CX23, 167.233.67.102, 2 vCPU / 4 ГБ). Запускает deploy.sh:
 #   docker compose --env-file /opt/calc/.env --env-file /opt/calc/.version.env \
 #     -f /opt/calc/deploy/vps/compose.yaml up -d
-# Бюджет памяти — docs/PLAN.md, этап 0.6.
+# Лимиты памяти рассчитаны ещё на 1 ГБ (docs/PLAN.md, этап 0.6) — с 4 ГБ есть запас, поднимать по мере надобности.
 
 name: calc
 

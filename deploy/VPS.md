@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Адрес | `calc.egor.am` → 72.56.93.77 (Timeweb Cloud, Амстердам) |
-| Машина | Ubuntu 24.04, 1 vCPU, 1 ГБ RAM + 2 ГБ swap, 15 ГБ диск |
+| Адрес | `calc.egor.am` → 167.233.67.102 (Hetzner Cloud CX23, Фалькенштайн; IPv6 2a01:4f8:c016:6791::/64) |
+| Машина | Ubuntu 24.04, 2 vCPU, 4 ГБ RAM + 2 ГБ swap, 40 ГБ диск |
 | Доступ | `ssh calc` (пользователь `deploy`, только ключ; root и пароли закрыты) |
 | Каталог | `/opt/calc` — git-чекаут репозитория (deploy key только на чтение) |
 | Данные | `/opt/calc/data/{postgres,photos,backups,logs}` |
@@ -50,9 +50,25 @@ read -rs -p "Ключ Claude API: " KEY; echo; printf '%s\n' "$KEY" | ssh calc /
 ## Первичная настройка (уже сделано)
 
 - `deploy/vps/bootstrap.sh` (root): обновления, swap, Docker, пользователь
-  `deploy`, ufw (22, 80, 443 + мониторинг Timeweb), каталоги.
+  `deploy`, ufw (22, 80, 443), каталоги.
 - `deploy/vps/harden-ssh.sh`: вход только по ключу и только `deploy`.
 - Push: `deploy/vps/gen-push-keys.sh` — ключи VAPID и CRON_SECRET в `.env`.
 - Cron (`crontab deploy/vps/crontab.example`): бэкап ежедневно 01:45 UTC (14 дней);
   каждый час `cron-hourly.sh` — напоминания о разборе недели (пн 9–12 по местному).
   Копии пока только на сервере — вынести наружу (TODO).
+
+## Переезд Timeweb → Hetzner (2026-09-30)
+
+Причина: Google относил IP Timeweb (72.56.93.77, Амстердам) к России, Gemini API
+отвечал «User location is not supported». С Hetzner (Фалькенштайн) YouTube отдаёт
+`"GL":"DE"` по IPv4 и IPv6 — проверять так с любого нового сервера до настройки:
+
+```bash
+curl -s https://www.youtube.com | grep -o '"GL":"[A-Z]*"'
+```
+
+Порядок, которым переезжали: bootstrap.sh + harden-ssh.sh → ключ CI в
+`~deploy/.ssh/authorized_keys` → новый read-only deploy key GitHub (`calc-hetzner-readonly`)
+и клон в `/opt/calc` → образ `docker save | ssh docker load` со старого сервера →
+`.env` через `scripts/migrate-env-to-hetzner.command` → дамп Postgres в пустую базу →
+`deploy.sh <sha>` → A-запись, `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS` → выключение Timeweb.

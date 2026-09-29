@@ -13,8 +13,7 @@ export DEBIAN_FRONTEND=noninteractive
 DEPLOY_USER=deploy
 APP_DIR=/opt/calc
 SWAP_SIZE=2G
-# Агент мониторинга Timeweb (zabbix_agentd) — его сервера из /etc/zabbix/zabbix_agentd.conf
-ZABBIX_SERVERS="92.53.116.12 92.53.116.111 92.53.116.119"
+# Hetzner: 2 vCPU / 4 ГБ, swap — только страховка от пиков.
 
 echo "==> Система"
 apt-get update -q
@@ -48,7 +47,7 @@ if ! command -v docker >/dev/null; then
   apt-get update -q
   apt-get -y -q install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
-# Ротация логов контейнеров по умолчанию — диск 15 ГБ.
+# Ротация логов контейнеров по умолчанию — диск 40 ГБ, но логи не должны его съесть.
 mkdir -p /etc/docker
 cat > /etc/docker/daemon.json <<'EOF'
 {
@@ -83,9 +82,6 @@ ufw allow 22/tcp comment ssh
 ufw allow 80/tcp comment http
 ufw allow 443/tcp comment https
 ufw allow 443/udp comment http3
-for ip in $ZABBIX_SERVERS; do
-  ufw allow from "$ip" to any port 10050 proto tcp comment timeweb-monitoring
-done
 ufw --force enable
 ufw status verbose
 
