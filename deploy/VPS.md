@@ -36,7 +36,15 @@ ssh calc 'docker images calc'                                          # вер�
 ssh calc '/opt/calc/deploy/vps/deploy.sh <sha>'                        # откат на версию
 ```
 
-Правка `/opt/calc/.env` (SMTP, ключ Claude): `ssh calc`, `nano /opt/calc/.env`,
+Секреты (ключ Claude, SMTP) — со скрытым вводом, без правки файла руками.
+Скрипт записывает значение в `/opt/calc/.env`, проверяет ключ Claude и
+перезапускает приложение:
+
+```bash
+read -rs -p "Ключ Claude API: " KEY; echo; printf '%s\n' "$KEY" | ssh calc /opt/calc/deploy/vps/set-secret.sh ANTHROPIC_API_KEY; unset KEY
+```
+
+То же для `SMTP_URL`. Остальное в `.env` — `ssh calc`, `nano /opt/calc/.env`,
 затем `deploy.sh` с текущим sha (`cat /opt/calc/.version.env`).
 
 ## Первичная настройка (уже сделано)
