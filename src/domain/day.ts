@@ -110,3 +110,21 @@ export function dayTitle(date: string, tz: string, now = new Date()): string {
     new Date(`${date}T12:00:00Z`),
   );
 }
+
+/** Понедельник недели, в которую входит date (недели — с понедельника). */
+export function weekStart(date: string): string {
+  const dow = new Date(`${date}T12:00:00Z`).getUTCDay(); // 0 — воскресенье
+  return addDays(date, -((dow + 6) % 7));
+}
+
+export const weekDates = (monday: string) => Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+
+/** «22–28 сентября» / «29 сентября – 5 октября». */
+export function weekTitle(monday: string): string {
+  const sunday = addDays(monday, 6);
+  const fmt = (d: string, o: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("ru-RU", { ...o, timeZone: "UTC" }).format(new Date(`${d}T12:00:00Z`));
+  return monday.slice(5, 7) === sunday.slice(5, 7)
+    ? `${fmt(monday, { day: "numeric" })}–${fmt(sunday, { day: "numeric", month: "long" })}`
+    : `${fmt(monday, { day: "numeric", month: "long" })} – ${fmt(sunday, { day: "numeric", month: "long" })}`;
+}

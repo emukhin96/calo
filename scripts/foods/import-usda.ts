@@ -211,6 +211,19 @@ function main() {
     path.join(outDir, "usda.json"),
     "[\n" + foods.map((f) => JSON.stringify(f)).join(",\n") + "\n]\n",
   );
+  // Плотности нутриентов на 1 ккал, 90-й процентиль по справочнику: верхняя
+  // правдоподобная оценка для продуктов с неизвестным составом (src/domain/week.ts).
+  const density: Partial<Record<NutrientKey, number>> = {};
+  for (const key of Object.keys(NUTRIENT_IDS).concat("omega3") as NutrientKey[]) {
+    if (key === "kcal") continue;
+    const xs = foods
+      .filter((f) => (f.nutrients.kcal ?? 0) >= 20 && f.nutrients[key] != null)
+      .map((f) => f.nutrients[key]! / f.nutrients.kcal!)
+      .sort((a, b) => a - b);
+    if (xs.length >= 50) density[key] = Math.round(xs[Math.floor(xs.length * 0.9)] * 10000) / 10000;
+  }
+  writeFileSync(path.join(outDir, "density.json"), JSON.stringify(density, null, 2) + "\n");
+
   const withMicros = foods.filter((f) => f.nutrients.vitC != null && f.nutrients.calcium != null).length;
   console.log(`usda.json: ${foods.length} продуктов, с витаминами и минералами: ${withMicros}, с весом штуки: ${foods.filter((f) => f.portion).length}`);
 }

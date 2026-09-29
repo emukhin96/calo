@@ -54,6 +54,11 @@ describe("searchFoods на справочнике", () => {
     expect(names(await searchFoods(db, OWNER, "parmesan"), 1)[0]).toContain("пармезан");
   });
 
+  it("падежи прилагательных: «банан сырой» → бананы, «яблоко» → яблоки сырые в первой тройке", async () => {
+    expect(names(await searchFoods(db, OWNER, "банан сырой"), 1)[0]).toMatch(/^бананы/);
+    expect(names(await searchFoods(db, OWNER, "яблоко"), 3).some((n) => n.startsWith("яблоки") && n.includes("сыр"))).toBe(true);
+  });
+
   it("пустой и бессмысленный запрос", async () => {
     expect(await searchFoods(db, OWNER, "  ")).toEqual([]);
     expect(await searchFoods(db, OWNER, "ъъъъъ")).toEqual([]);

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { addDays, dayTitle, isIsoDate, MEAL_RU, MEALS, todayIn } from "@/domain/day";
 import { loadDay } from "@/lib/diary";
 import { loadUser } from "@/lib/norms";
+import { shouldShowWeek } from "@/lib/week";
 import { requireSession } from "@/lib/session";
 import { userTimeZone } from "@/lib/tz";
 import { BigNumber, Eyebrow, MacroBar } from "@/ui/components";
@@ -19,6 +20,8 @@ export default async function DayPage({ searchParams }: PageProps<"/">) {
   const tz = await userTimeZone(session.user.id);
   const sp = await searchParams;
   const today = todayIn(tz);
+  // Первый вход после окончания недели — сначала разбор (как лист со скриншота).
+  if (sp.d == null && (await shouldShowWeek(session.user.id, tz))) redirect("/week");
   const date = typeof sp.d === "string" && isIsoDate(sp.d) ? sp.d : today;
   const { entries, totals } = await loadDay(session.user.id, date, tz);
   const title = dayTitle(date, tz);
@@ -78,7 +81,7 @@ export default async function DayPage({ searchParams }: PageProps<"/">) {
       />
 
       <Link href="/week" className="mt-10 block text-[16px] font-semibold text-accent">
-        Разбор прошлой недели (демо) →
+        Разбор недели →
       </Link>
 
       <Link

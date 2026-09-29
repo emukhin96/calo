@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSearchText, normalizeSearch, queryTokens } from "./search";
+import { buildSearchText, normalizeSearch, queryTokens, stem } from "./search";
 
 describe("normalizeSearch", () => {
   it("регистр, ё, пунктуация, десятичная запятая", () => {
@@ -23,5 +23,15 @@ describe("queryTokens", () => {
     expect(queryTokens("творог 5% 200 г")).toEqual(["творог", "5"]);
     expect(queryTokens("кефир 250")).toEqual(["кефир"]);
     expect(queryTokens("Паста из пармезана")).toEqual(["паста", "пармезана"]);
+  });
+});
+
+describe("stem", () => {
+  it.each([
+    ["сырой", "сыр"], ["сырые", "сыр"], ["яблоко", "яблок"], ["вареный", "варен"], ["куриная", "курин"],
+    ["пармезана", "пармезан"], ["молоко", "молок"], ["творог", "творог"], ["сыр", "сыр"], ["rummo", "rummo"],
+    ["банан", "банан"], ["гречка", "гречк"],
+  ])("%s → %s", (word, expected) => {
+    expect(stem(word)).toBe(expected);
   });
 });

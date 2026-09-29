@@ -2,7 +2,7 @@
 // гоняют их на PGlite в памяти (src/db/foods.test.ts).
 import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { NutrientVector } from "@/domain/nutrients";
-import { buildSearchText, queryTokens } from "@/domain/search";
+import { buildSearchText, queryTokens, stem } from "@/domain/search";
 import type { DB } from ".";
 import { entries, foods } from "./schema";
 
@@ -47,15 +47,19 @@ export async function searchFoods(db: DB, ownerId: string, query: string, limit 
   const tokens = queryTokens(query);
   if (tokens.length === 0) return [];
 
+  // Подстрокой ищем по основе слова (падежи: «сырой» ~ «сырые»), сходством — по слову целиком (опечатки).
   const perToken: SQL[] = tokens.map(
     (t) =>
-      sql`(${foods.searchText} like ${"%" + t + "%"} or word_similarity(${t}, ${foods.searchText}) >= ${WORD_SIMILARITY})`,
+      sql`(${foods.searchText} like ${"%" + stem(t) + "%"} or word_similarity(${t}, ${foods.searchText}) >= ${WORD_SIMILARITY})`,
   );
   const score = sql.join(
-    tokens.map((t) => sql`greatest(word_similarity(${t}, ${foods.searchText}), case when ${foods.searchText} like ${"%" + t + "%"} then 1 else 0 end)`),
+    tokens.map(
+      (t) =>
+        sql`greatest(word_similarity(${t}, ${foods.searchText}), case when ${foods.searchText} like ${"%" + stem(t) + "%"} then 1 else 0 end)`,
+    ),
     sql` + `,
   );
-  const startsWith = sql`(${foods.searchText} like ${tokens[0] + "%"})`;
+  const startsWith = sql`(${foods.searchText} like ${stem(tokens[0]) + "%"})`;
   const eaten = sql`least((select count(*) from ${entries} where ${entries.ownerId} = ${ownerId} and ${entries.foodId} = ${foods.id}), 5)`;
   const completeness = sql`(select count(*) from jsonb_each(${foods.nutrientsPer100g}) where value <> 'null'::jsonb)`;
 

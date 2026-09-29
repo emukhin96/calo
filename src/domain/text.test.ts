@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatInt, plural } from "./format";
+import { formatInt, plural } from "./text";
 
 describe("formatInt", () => {
   it("разделяет разряды узким пробелом, включая четырёхзначные", () => {

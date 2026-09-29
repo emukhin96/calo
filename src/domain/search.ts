@@ -36,3 +36,23 @@ export function queryTokens(query: string): string[] {
   if (tokens.length > 1 && /^\d{3,}$/.test(tokens[tokens.length - 1])) tokens.pop();
   return [...new Set(tokens)].slice(0, 6);
 }
+
+// Окончания прилагательных и существительных, от длинных к коротким.
+const ENDINGS = [
+  "ами", "ями", "ого", "его", "ому", "ему", "ыми", "ими",
+  "ой", "ый", "ий", "ая", "яя", "ое", "ее", "ые", "ие", "ую", "юю", "ом", "ем", "ым", "им", "ых", "их", "ов", "ев", "ей",
+  "а", "я", "о", "е", "и", "ы", "у", "ю", "ь", "й",
+];
+
+/**
+ * Лёгкий стемминг для поиска подстрокой: «сырой» и «сырые» → «сыр»,
+ * «яблоко» → «яблок», «варёный» → «варен». Слова короче 5 букв и не
+ * кириллица не трогаем («сыр», «rummo», «20»).
+ */
+export function stem(token: string): string {
+  if (token.length < 5 || !/^[а-я]+$/.test(token)) return token;
+  for (const e of ENDINGS) {
+    if (token.endsWith(e) && token.length - e.length >= 3) return token.slice(0, -e.length);
+  }
+  return token;
+}
