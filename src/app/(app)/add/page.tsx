@@ -10,8 +10,8 @@ import { FoodSearch } from "./FoodSearch";
  * /add?d=2026-09-29&meal=lunch. Шаблоны, рецепт и фото — этапы 4, 6, 7.
  */
 export default async function AddPage({ searchParams }: PageProps<"/add">) {
-  await requireSession();
-  const tz = await userTimeZone();
+  const session = await requireSession();
+  const tz = await userTimeZone(session.user.id);
   const sp = await searchParams;
   const d = typeof sp.d === "string" && isIsoDate(sp.d) ? sp.d : todayIn(tz);
   const meal: Meal =

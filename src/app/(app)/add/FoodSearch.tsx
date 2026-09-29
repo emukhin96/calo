@@ -5,20 +5,13 @@ import { useEffect, useRef, useState } from "react";
 import { amountToGrams, parseAmount } from "@/domain/amount";
 import type { Meal } from "@/domain/day";
 import type { FoodResult } from "@/db/foods";
-import { NUTRIENT_KEYS, NUTRIENT_UNITS, type NutrientKey, type NutrientVector } from "@/domain/nutrients";
+import { NUTRIENT_KEYS, type NutrientVector } from "@/domain/nutrients";
+import { fmtAmount, NUTRIENT_LABELS, unitRu } from "@/ui/nutrients";
 import { Eyebrow } from "@/ui/components";
 import { PortionSheet } from "@/ui/PortionSheet";
 
 type OffItem = { code: string; nameRu: string; brand: string | null; nutrientsPer100g: NutrientVector };
 
-const LABELS: Record<NutrientKey, string> = {
-  kcal: "Энергия", protein: "Белки", fat: "Жиры", carbs: "Углеводы", fiber: "Клетчатка", sugar: "Сахара",
-  vitA: "Витамин A", vitC: "Витамин C", vitD: "Витамин D", vitE: "Витамин E", vitK: "Витамин K",
-  b1: "B1", b2: "B2", b6: "B6", b9: "B9 (фолат)", b12: "B12",
-  calcium: "Кальций", iron: "Железо", magnesium: "Магний", potassium: "Калий", sodium: "Натрий",
-  zinc: "Цинк", selenium: "Селен", omega3: "Омега-3",
-};
-const UNIT_RU = { kcal: "ккал", g: "г", mg: "мг", "µg": "мкг" } as const;
 const SOURCE_RU = { usda: "USDA", off: "OFF", manual: "моё", ai_estimate: "оценка" } as const;
 
 const fmt = (x: number | null | undefined, digits = 1) =>
@@ -41,9 +34,9 @@ function Details({ n }: { n: NutrientVector }) {
       <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[14px]">
         {rows.map((k) => (
           <div key={k} className="flex justify-between">
-            <dt className="text-ink-3">{LABELS[k]}</dt>
+            <dt className="text-ink-3">{NUTRIENT_LABELS[k]}</dt>
             <dd className="tabular text-ink-2">
-              {n[k] == null ? "—" : `${fmt(n[k], 2)} ${UNIT_RU[NUTRIENT_UNITS[k]]}`}
+              {n[k] == null ? "—" : `${fmtAmount(n[k])} ${unitRu(k)}`}
             </dd>
           </div>
         ))}

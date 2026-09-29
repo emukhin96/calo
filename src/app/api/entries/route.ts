@@ -10,7 +10,7 @@ import { userTimeZone } from "@/lib/tz";
 export async function GET(req: Request) {
   const { session, error } = await apiSession(req);
   if (error) return error;
-  const tz = await userTimeZone();
+  const tz = await userTimeZone(session.user.id);
   const date = new URL(req.url).searchParams.get("date");
   return Response.json(await loadDay(session.user.id, isIsoDate(date) ? date : todayIn(tz), tz));
 }
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   const body = CreateBody.safeParse(await req.json().catch(() => null));
   if (!body.success) return Response.json({ error: "bad request" }, { status: 400 });
 
-  const tz = await userTimeZone();
+  const tz = await userTimeZone(session.user.id);
   const now = new Date();
   const date = body.data.date ?? todayIn(tz, now);
   const meal = body.data.meal ?? mealByHour(zonedParts(now, tz).hour);

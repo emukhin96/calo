@@ -17,9 +17,9 @@
   --color-fat: #f2a81b;
   --color-carbs: #7ccb2b;
 
-  --font-display: var(--font-unbounded), system-ui, sans-serif;
-  --font-sans: var(--font-manrope), system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --font-display: "Unbounded Variable", system-ui, sans-serif;
+  --font-sans: "Manrope Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
 
   --radius-sheet: 32px;
   --radius-button: 20px;
