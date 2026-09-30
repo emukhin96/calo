@@ -147,5 +147,5 @@ MVP (этапы 0–5) — примерно 11 рабочих дней; с ИИ-
 ## Что нужно от вас для этапа 0
 - ~~VPS~~ — `calc` (72.56.93.77, Амстердам), настроен `deploy/vps/bootstrap.sh` + `harden-ssh.sh`: пользователь `deploy`, Docker, swap 2 ГБ, ufw, вход только по ключу.
 - ~~A-запись~~ `calc.egor.am` → 72.56.93.77.
-- SMTP для писем со ссылкой входа (Яндекс/Gmail app password или Resend) — можно позже, passkey работает без него.
+- ~~SMTP~~ для писем со ссылкой входа — ящик no-reply@egor.am в Timeweb, smtp.timeweb.ru:587 (STARTTLS; у Hetzner 465 закрыт), `scripts/set-smtp.command`.
 - Ключ Claude API — на этапе 6 (сервер в Нидерландах, API оттуда доступен).
