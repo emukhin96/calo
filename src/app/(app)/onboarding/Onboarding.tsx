@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ACTIVITY_RU,
   type Activity,
@@ -10,7 +10,7 @@ import {
   type GoalKind,
   type Sex,
 } from "@/domain/norms";
-import { Button, Eyebrow } from "@/ui/components";
+import { BottomBar, Button, Eyebrow } from "@/ui/components";
 import { NumberField, OptionCard, parseNum, Segmented } from "@/ui/form";
 import { formatInt } from "@/ui/format";
 
@@ -43,6 +43,20 @@ export function Onboarding() {
   const [activity, setActivity] = useState<Activity | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const paceRef = useRef<HTMLDivElement>(null);
+
+  // Выбрали «снизить/набрать» — темп и целевой вес появляются ниже; на маленьком
+  // экране они под кнопкой, поэтому докручиваем до них (scroll-padding учитывает панель).
+  useEffect(() => {
+    paceRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [goal]);
+
+  /** Новый шаг — с начала страницы, а не с места прокрутки прошлого. */
+  function go(next: number) {
+    setError("");
+    setStep(next);
+    window.scrollTo({ top: 0 });
+  }
 
   const by = parseNum(birthYear);
   const h = parseNum(height);
@@ -87,10 +101,11 @@ export function Onboarding() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col px-6 pt-6 pb-[calc(24px+env(safe-area-inset-bottom))]">
+    // Колонка на весь экран: короткий шаг не прокручивается, кнопка — в липкой панели внизу.
+    <main className="mx-auto flex min-h-app max-w-xl flex-col px-6 pt-6">
       <div className="flex items-center gap-3">
         {step > 0 ? (
-          <button type="button" onClick={() => setStep(step - 1)} className="text-[16px] font-semibold text-accent">
+          <button type="button" onClick={() => go(step - 1)} className="text-[16px] font-semibold text-accent">
             ‹ Назад
           </button>
         ) : (
@@ -107,7 +122,8 @@ export function Onboarding() {
         Шаг {step + 1} из {STEPS.length} · {STEPS[step].toLowerCase()}
       </Eyebrow>
 
-      <div className="mt-2 flex-1">
+      {/* pb-6: запас под затухание панели — последнее поле не прячется под ней в конце прокрутки */}
+      <div className="mt-2 flex-1 pb-6">
         {step === 0 && (
           <>
             <h1 className="font-display text-[30px] leading-tight font-extrabold">Какая цель?</h1>
@@ -117,7 +133,7 @@ export function Onboarding() {
               ))}
             </div>
             {goal && goal !== "maintain" && (
-              <div className="mt-6 space-y-5">
+              <div ref={paceRef} className="mt-6 space-y-5">
                 <div>
                   <p className="mb-2 text-[15px] font-semibold text-ink">
                     Темп в неделю <span className="font-normal text-ink-3">· {RATE_HINT[rate]}</span>
@@ -186,13 +202,13 @@ export function Onboarding() {
             <Eyebrow className="mt-3">
               коридор {formatInt(norms.kcalRange[0])}–{formatInt(norms.kcalRange[1])} ккал
             </Eyebrow>
-            <dl className="mt-6 grid grid-cols-3 gap-3">
+            <dl className="mt-6 grid grid-cols-3 gap-2">
               {[
                 ["Белок", norms.nutrients.protein!.value, "не меньше"],
                 ["Жиры", norms.nutrients.fat!.value, "около"],
                 ["Углеводы", norms.nutrients.carbs!.value, "около"],
               ].map(([label, value, note]) => (
-                <div key={label} className="rounded-2xl bg-surface px-4 py-3">
+                <div key={label} className="min-w-0 rounded-2xl bg-surface px-3 py-3">
                   <dt className="text-[13px] text-ink-3">{label}</dt>
                   <dd className="tabular mt-1 text-[22px] font-bold">
                     {formatInt(value as number)} <span className="text-[14px] font-normal text-ink-2">г</span>
@@ -217,16 +233,18 @@ export function Onboarding() {
         )}
       </div>
 
-      {error && <p className="mb-3 text-[15px] text-warn">{error}</p>}
-      {step < 4 ? (
-        <Button disabled={!valid[step]} onClick={() => setStep(step + 1)}>
-          Дальше
-        </Button>
-      ) : (
-        <Button disabled={saving || !norms} onClick={finish}>
-          {saving ? "Сохраняю…" : "Начать"}
-        </Button>
-      )}
+      <BottomBar>
+        {error && <p className="mb-3 text-[15px] text-warn">{error}</p>}
+        {step < 4 ? (
+          <Button disabled={!valid[step]} onClick={() => go(step + 1)}>
+            Дальше
+          </Button>
+        ) : (
+          <Button disabled={saving || !norms} onClick={finish}>
+            {saving ? "Сохраняю…" : "Начать"}
+          </Button>
+        )}
+      </BottomBar>
     </main>
   );
 }

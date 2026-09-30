@@ -21,6 +21,9 @@ export const viewport: Viewport = {
   themeColor: "#f7f7fa",
   width: "device-width",
   initialScale: 1,
+  // iOS увеличивает страницу при фокусе поля мельче 16px, и она «уезжает» вбок.
+  // Поля ввода делаем ≥ 16px, а это — страховка (в Safari щипок всё равно работает).
+  maximumScale: 1,
   viewportFit: "cover",
 };
 

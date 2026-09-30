@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useKeyboardInset } from "./useKeyboardInset";
 
 type Props = { onCode: (code: string) => void; onClose: () => void };
 
@@ -16,6 +17,12 @@ export function BarcodeScanner({ onCode, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [manual, setManual] = useState("");
   const done = useRef(false);
+  const keyboard = useKeyboardInset();
+  // Камера запускается один раз: новый onCode (родитель перерисовался) её не перезапускает.
+  const found = useRef(onCode);
+  useEffect(() => {
+    found.current = onCode;
+  });
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -48,7 +55,7 @@ export function BarcodeScanner({ onCode, onClose }: Props) {
             if (hit?.rawValue && /^\d{8,14}$/.test(hit.rawValue)) {
               done.current = true;
               navigator.vibrate?.(40);
-              onCode(hit.rawValue);
+              found.current(hit.rawValue);
               return;
             }
           } catch {
@@ -74,12 +81,13 @@ export function BarcodeScanner({ onCode, onClose }: Props) {
       clearTimeout(timer);
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, [onCode]);
+  }, []);
 
   const manualOk = /^\d{8,14}$/.test(manual);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black text-white">
+    // Клавиатура ручного ввода ложится поверх экрана — поле поднимаем над ней (как BottomSheet).
+    <div className="fixed inset-0 z-50 flex flex-col bg-black text-white" style={keyboard ? { paddingBottom: keyboard } : undefined}>
       <div className="flex items-center justify-between px-5 pt-[calc(16px+env(safe-area-inset-top))] pb-3">
         <span className="text-[17px] font-bold">Штрихкод</span>
         <button type="button" onClick={onClose} className="text-[16px] font-semibold text-white/80">
@@ -101,6 +109,7 @@ export function BarcodeScanner({ onCode, onClose }: Props) {
 
       <form
         className="flex gap-2 bg-black px-5 pt-4 pb-[calc(16px+env(safe-area-inset-bottom))]"
+        style={keyboard ? { paddingBottom: 12 } : undefined}
         onSubmit={(e) => {
           e.preventDefault();
           if (manualOk) onCode(manual);
@@ -111,9 +120,9 @@ export function BarcodeScanner({ onCode, onClose }: Props) {
           placeholder="или введите цифры кода"
           value={manual}
           onChange={(e) => setManual(e.target.value.replace(/\D/g, "").slice(0, 14))}
-          className="tabular h-12 flex-1 rounded-xl bg-white/10 px-4 text-[17px] text-white outline-none placeholder:text-white/40"
+          className="tabular h-12 min-w-0 flex-1 rounded-xl bg-white/10 px-4 text-[17px] text-white outline-none placeholder:text-white/40"
         />
-        <button type="submit" disabled={!manualOk} className="rounded-xl bg-accent px-4 text-[16px] font-bold disabled:opacity-40">
+        <button type="submit" disabled={!manualOk} className="shrink-0 rounded-xl bg-accent px-4 text-[16px] font-bold disabled:opacity-40">
           Найти
         </button>
       </form>

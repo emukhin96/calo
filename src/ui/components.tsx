@@ -60,7 +60,7 @@ export function MarkList({ kind, items }: { kind: Mark; items: ReactNode[] }) {
           <span className="pt-px">
             <MarkIcon kind={kind} />
           </span>
-          <span>{item}</span>
+          <span className="min-w-0">{item}</span>
         </li>
       ))}
     </ul>
@@ -78,14 +78,36 @@ export function ButtonLink(props: ComponentProps<typeof Link>) {
   return <Link {...props} className={`${buttonClass} ${props.className ?? ""}`} />;
 }
 
-/** Лист снизу, как на скриншоте: серый фон сверху, скруглённый светлый лист. */
+/**
+ * Лист снизу, как на скриншоте: серый фон сверху, скруглённый светлый лист до низа экрана.
+ * Серый фон заходит под чёлку (-mt на отступ body), поэтому высота ровно 100dvh:
+ * короткий разбор не прокручивается.
+ */
 export function Sheet({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
   return (
-    <div className="min-h-dvh bg-backdrop pt-3">
-      <div className="mx-auto flex min-h-[calc(100dvh-12px)] max-w-xl flex-col rounded-t-[var(--radius-sheet)] bg-bg px-6 pt-7 pb-8">
+    <div className="-mt-[env(safe-area-inset-top)] flex min-h-dvh flex-col bg-backdrop pt-[calc(12px+env(safe-area-inset-top))]">
+      <div className="mx-auto flex w-full max-w-xl flex-1 flex-col rounded-t-[var(--radius-sheet)] bg-bg px-6 pt-7 pb-[calc(32px+env(safe-area-inset-bottom))]">
         <div className="flex-1">{children}</div>
         {footer && <div className="pt-8">{footer}</div>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Липкая панель внизу экрана под главную кнопку («Дальше», «Сохранить»): не налезает
+ * на контент, контент уходит под неё с мягким затуханием; снизу — отступ под индикатор
+ * «Домой». Ставится последним ребёнком колонки на всю высоту (min-h-app flex-col)
+ * с отступами px-6 — полоса фона растягивается на них через -mx-6. Перед ней контенту
+ * нужен запас снизу (pb-6), чтобы затухание в конце прокрутки ложилось на пустое место.
+ */
+export function BottomBar({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      data-bottom-bar
+      className={`sticky bottom-0 z-10 -mx-6 bg-bg px-6 pt-4 pb-[calc(16px+env(safe-area-inset-bottom))] before:pointer-events-none before:absolute before:inset-x-0 before:-top-6 before:h-6 before:bg-linear-to-b before:from-bg/0 before:to-bg ${className}`}
+    >
+      {children}
     </div>
   );
 }

@@ -26,14 +26,14 @@ export function AddPasskeyBanner() {
 
   return (
     <div className="mt-6 flex items-center gap-4 rounded-2xl bg-surface p-4 shadow-sm">
-      <p className="flex-1 text-[15px] leading-snug text-ink-2">
+      <p className="min-w-0 flex-1 text-[15px] leading-snug text-ink-2">
         Включите вход по Face ID — без писем и паролей.
       </p>
       <button
         type="button"
         onClick={add}
         disabled={busy}
-        className="rounded-xl bg-accent px-4 py-2.5 text-[15px] font-bold text-white disabled:opacity-50"
+        className="shrink-0 rounded-xl bg-accent px-4 py-2.5 text-[15px] font-bold text-white disabled:opacity-50"
       >
         Включить
       </button>
