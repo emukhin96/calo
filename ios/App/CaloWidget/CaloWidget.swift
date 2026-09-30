@@ -27,6 +27,7 @@ struct Provider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<DayEntry>) -> Void) {
         Task {
             let summary = await CaloShared.fetchSummary()
+            CaloShared.note("timeline: \(summary?.kcal ?? -1) ккал, блюд \(CaloShared.dishes.count)")
             let entry = DayEntry(date: .now, summary: summary, dishes: CaloShared.dishes, signedIn: CaloShared.config != nil)
             // Раз в 30 минут; после полуночи — сразу, чтобы начать новый день с нуля.
             let next = min(Date.now.addingTimeInterval(30 * 60), Calendar.current.startOfDay(for: .now.addingTimeInterval(86_400)))
@@ -51,7 +52,12 @@ struct AddDishIntent: AppIntent {
     init(dishId: String) { self.dishId = dishId }
 
     func perform() async throws -> some IntentResult {
-        if let dish = CaloShared.dishes.first(where: { $0.id == dishId }), await CaloShared.addDish(dish) {
+        CaloShared.note("нажато \(dishId)")
+        guard let dish = CaloShared.dishes.first(where: { $0.id == dishId }) else {
+            CaloShared.note("блюдо не найдено \(dishId)")
+            return .result()
+        }
+        if await CaloShared.addDish(dish) {
             _ = await CaloShared.fetchSummary()
         }
         return .result()
