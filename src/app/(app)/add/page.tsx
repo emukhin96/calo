@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { db } from "@/db";
 import { getMealSettings } from "@/db/profile";
 import { dayTitle, todayIn } from "@/domain/day";
@@ -9,11 +8,13 @@ import { requireSession } from "@/lib/session";
 import { userTimeZone } from "@/lib/tz";
 import { Eyebrow } from "@/ui/components";
 import { addTabOf, initialTextOf, preferredKey, preferredMealOf, preferredMealTitle } from "./add-flow";
+import { CancelLink } from "./CancelLink";
 import { FoodSearch } from "./FoodSearch";
 
 /**
  * «Добавить»: «Продукт» — поиск по справочнику → порция → запись; «Текст» — разбор
- * описания через Gemini (этап 6); «Мои блюда». Фото — этап 7.
+ * описания через Gemini (этап 6); «Блюда». Фото — этап 7. «Отмена» в шапке — назад
+ * в дневник без записи (с вопросом, если разобранный текст не сохранён).
  * /add?d=2026-09-29 — в день (будущий — сегодня, как на главном экране: записи
  * в будущий день не бывает); &meal=<id приёма дня> — в этот приём, &meal=Обед —
  * в приём с этим названием (или новый; старое &meal=lunch тоже); &text=… — из
@@ -29,8 +30,12 @@ export default async function AddPage({ searchParams }: PageProps<"/add">) {
   const text = initialTextOf(sp.text);
   const tab = addTabOf(sp.tab, text);
   // Приёмы дня по порядку — выбор «в какой приём» в листе порции и после разбора
-  // текста; свой список приёмов и показ времени — из Профиля.
-  const [{ meals }, { plan, showTimes }] = await Promise.all([loadDay(session.user.id, d, tz), getMealSettings(db, session.user.id)]);
+  // текста; свой список приёмов и показ времени — из Профиля. plan — что предлагать
+  // (без скрытых), order — весь список со скрытыми: по нему встаёт новый приём.
+  const [{ meals }, { plan, items, showTimes }] = await Promise.all([
+    loadDay(session.user.id, d, tz),
+    getMealSettings(db, session.user.id),
+  ]);
   const title = preferredMealTitle(meals, preferred, showTimes);
 
   return (
@@ -39,9 +44,8 @@ export default async function AddPage({ searchParams }: PageProps<"/add">) {
           не влезает в строку даже на 390 px, а дата — главное, куда пишем. */}
       <div className="flex items-baseline justify-between gap-3">
         <Eyebrow className="min-w-0">Добавить · {dayTitle(d, tz).toLowerCase()}</Eyebrow>
-        <Link href={`/?d=${d}`} className="shrink-0 text-[16px] font-semibold text-accent">
-          Готово
-        </Link>
+        {/* «Отмена», а не «Готово»: ссылка ничего не сохраняет, а разобранный текст пропал бы молча. */}
+        <CancelLink href={`/?d=${d}`} />
       </div>
       <h1 className={`mt-2 font-display text-[28px] leading-tight font-extrabold ${title ? "" : "mb-6"}`}>Что съели?</h1>
       {/* Приём из ссылки «добавить в этот приём» — подзаголовком: своё название бывает
@@ -60,6 +64,7 @@ export default async function AddPage({ searchParams }: PageProps<"/add">) {
         date={d}
         meals={toDayMeals(meals, showTimes)}
         plan={plan}
+        order={items.map((i) => i.name)}
         showTimes={showTimes}
         isToday={d === today}
         preferred={preferred}

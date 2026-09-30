@@ -72,7 +72,7 @@ export function addTabOf(tab: unknown, text: string | null): AddTab {
 }
 
 /**
- * Название выбранного приёма — для «Моих блюд»: вероятные для него сверху.
+ * Название выбранного приёма — для вкладки «Блюда»: вероятные для него сверху.
  * Приём дня — его название; новый — нормализованное; не нашёлся или пустое — null.
  */
 export function choiceMealName(choice: MealChoice, meals: readonly { id: string; name: string }[]): string | null {
@@ -105,4 +105,48 @@ export function rowMealBody(
   const time = body.time ? { time: body.time } : {};
   // По id — с названием: если приём удалят, пока позиции ждут в очереди, сервер найдёт его по названию.
   return first ? { mealId: first, mealName: body.mealName, ...time } : { mealName: body.mealName, ...time };
+}
+
+/** Столько граммов принимает POST /api/entries: блюдо тяжелее одной записью в дневник не встанет. */
+export const ENTRY_MAX_GRAMS = 5000;
+/** Столько ингредиентов и такое название принимает POST /api/recipes (lib/recipe-schema.ts). */
+export const DISH_MAX_INGREDIENTS = 60;
+export const DISH_NAME_MAX = 120;
+
+const capitalize = (s: string) => s.charAt(0).toLocaleUpperCase("ru") + s.slice(1);
+/** «Яйцо» внутри названия — «яйцо»; аббревиатуры («USDA», «ВВП») не трогаем. */
+const uncapitalize = (s: string) => (/^\p{Lu}\p{Ll}/u.test(s) ? s.charAt(0).toLocaleLowerCase("ru") + s.slice(1) : s);
+/** «обед:», «на завтрак:», «второй завтрак:» — это приём пищи, а не название блюда. */
+const MEAL_HEAD = /^(на\s+)?((второй|поздний|ночной)\s+)?(завтрак|обед|ужин|перекус|полдник|ланч|бранч)[\s.,;–—-]*$/iu;
+
+/**
+ * Название блюда по умолчанию для «Одним блюдом» в разборе текста: текст до
+ * двоеточия («паста: 100 г сухой пасты, …» → «Паста»), иначе первые позиции
+ * («Кефир и яйцо», «Борщ, хлеб и сметана»). С заглавной, не длиннее
+ * DISH_NAME_MAX; нечего предложить — пустая строка (название введут сами).
+ * Время («12:30 кефир»), приём пищи («обед: борщ, хлеб») и длинная фраза
+ * до двоеточия названием не считаются.
+ */
+export function defaultDishName(text: string, names: readonly string[]): string {
+  const colon = text.indexOf(":");
+  if (colon > 0) {
+    const head = text.slice(0, colon).trim();
+    if (!/[\n\d]/.test(head) && /\p{L}/u.test(head) && head.length <= 60 && !MEAL_HEAD.test(head.replace(/\s+/g, " "))) {
+      const name = head.replace(/\s+/g, " ").replace(/[\s.,;–—-]+$/u, "");
+      if (name.length >= 2) return capitalize(name).slice(0, DISH_NAME_MAX);
+    }
+  }
+  const seen = new Set<string>();
+  const parts = names
+    .map((n) => n.replace(/\s+/g, " ").trim())
+    .filter((n) => {
+      const k = n.toLocaleLowerCase("ru");
+      if (!n || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .slice(0, 3)
+    .map((n, i) => (i === 0 ? capitalize(n) : uncapitalize(n)));
+  const joined = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} и ${parts.at(-1)}` : (parts[0] ?? "");
+  return joined.slice(0, DISH_NAME_MAX).trim();
 }

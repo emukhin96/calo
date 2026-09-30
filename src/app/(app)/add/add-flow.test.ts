@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   addTabOf,
   choiceMealName,
+  defaultDishName,
+  DISH_NAME_MAX,
   initialTextOf,
   preferredKey,
   preferredMealOf,
@@ -126,5 +128,37 @@ describe("rowMealBody", () => {
   it("первая ушла в очередь — остальные по названию, без newMeal", () => {
     expect(rowMealBody({ kind: "new", name: "Ужин", time: null }, null)).toEqual({ mealName: "Ужин" });
     expect(rowMealBody({ kind: "new", name: "Ужин", time: "19:00" }, null)).toEqual({ mealName: "Ужин", time: "19:00" });
+  });
+});
+
+describe("defaultDishName", () => {
+  it("текст до двоеточия — название блюда, с заглавной", () => {
+    expect(defaultDishName("паста: 100 г сухой пасты, 50 г сливок 20%, 30 г пармезана", ["сухая паста", "сливки 20%"])).toBe("Паста");
+    expect(defaultDishName("  салат   цезарь : листья 50 г", [])).toBe("Салат цезарь");
+  });
+
+  it("время, цифры или перенос строки до двоеточия — не название: первые позиции", () => {
+    expect(defaultDishName("12:30 кефир 250", ["кефир"])).toBe("Кефир");
+    expect(defaultDishName("2 яйца: варёные", ["яйцо"])).toBe("Яйцо");
+    expect(defaultDishName("кефир 250\nобед: борщ", ["кефир", "борщ"])).toBe("Кефир и борщ");
+  });
+
+  it("приём пищи до двоеточия — не название блюда: первые позиции", () => {
+    expect(defaultDishName("обед: борщ 300, хлеб 50", ["борщ", "хлеб"])).toBe("Борщ и хлеб");
+    expect(defaultDishName("На завтрак: овсянка 50 г, молоко 200", ["овсянка", "молоко"])).toBe("Овсянка и молоко");
+    expect(defaultDishName("второй  завтрак : йогурт 150", ["йогурт"])).toBe("Йогурт");
+    // Название, в котором приём — лишь слово, остаётся названием.
+    expect(defaultDishName("завтрак чемпиона: овсянка 80 г", ["овсянка"])).toBe("Завтрак чемпиона");
+  });
+
+  it("без двоеточия — до трёх позиций через запятую и «и», повторы один раз", () => {
+    expect(defaultDishName("кефир 250, яйцо 2 шт", ["кефир", "Яйцо"])).toBe("Кефир и яйцо");
+    expect(defaultDishName("борщ, хлеб, сметана, чай", ["борщ", "хлеб ржаной", "сметана", "чай"])).toBe("Борщ, хлеб ржаной и сметана");
+    expect(defaultDishName("яйцо и яйцо", ["яйцо", "Яйцо", "USDA-сыр"])).toBe("Яйцо и USDA-сыр");
+  });
+
+  it("нечего предложить — пустая строка; длинное — не длиннее лимита", () => {
+    expect(defaultDishName("что-то", [])).toBe("");
+    expect(defaultDishName("x", ["а".repeat(200)]).length).toBe(DISH_NAME_MAX);
   });
 });

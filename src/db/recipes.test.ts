@@ -94,7 +94,7 @@ describe("шаблон и запись в дневник", () => {
     expect((await getRecipe(db, ME, t.id))?.useCount).toBe(1);
   });
 
-  it("«Мои блюда»: наверху то, что едят в этот приём пищи", async () => {
+  it("«Блюда»: наверху то, что едят в этот приём пищи", async () => {
     await createEntry(db, ME, { recipeId: ids.pastaDish, grams: 300, meal: "dinner", eatenAt: new Date() });
     await createEntry(db, ME, { recipeId: ids.syrniki, grams: 220, meal: "breakfast", eatenAt: new Date() });
     expect((await listRecipes(db, ME, "breakfast"))[0].name).toBe("Сырники в кафе");

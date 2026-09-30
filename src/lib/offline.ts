@@ -68,7 +68,7 @@ export async function flushQueue(): Promise<number> {
   return sent;
 }
 
-/** Кэш списков для офлайна: недавние продукты, мои блюда. */
+/** Кэш списков для офлайна: недавние продукты, «Блюда». */
 export function cacheSet(key: string, value: unknown) {
   try {
     localStorage.setItem(`calo:cache:${key}`, JSON.stringify(value));

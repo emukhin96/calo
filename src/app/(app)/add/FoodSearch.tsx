@@ -82,19 +82,21 @@ function portionOf(f: FoodResult) {
 const TABS: [AddTab, string][] = [
   ["food", "Продукт"],
   ["text", "Текст"],
-  ["recipes", "Мои блюда"],
+  ["recipes", "Блюда"],
 ];
 
 /**
  * Поиск продукта → лист порции → запись в дневник за день date. meals — приёмы
- * дня по порядку (с сервера), plan — свой список приёмов из Профиля (новый приём
- * встаёт на место по нему), showTimes — показ времени приёмов включён в Профиле;
+ * дня по порядку (с сервера), plan — свой список приёмов из Профиля (что
+ * предлагать, без скрытых), order — весь список со скрытыми (новый приём встаёт
+ * на место по нему), showTimes — показ времени приёмов включён в Профиле;
  * preferred — приём из ссылки «добавить в этот приём».
  */
 export function FoodSearch({
   date,
   meals,
   plan,
+  order,
   showTimes,
   isToday,
   preferred,
@@ -104,6 +106,7 @@ export function FoodSearch({
   date: string;
   meals: DayMeal[];
   plan: string[];
+  order?: string[];
   showTimes: boolean;
   isToday: boolean;
   preferred: PreferredMeal | null;
@@ -150,7 +153,7 @@ export function FoodSearch({
     openRef.current = openPortion;
   });
 
-  // «Мои блюда» — вероятные для приёма сверху: из ссылки, иначе для того, что предложим по умолчанию
+  // «Блюда» — вероятные для приёма сверху: из ссылки, иначе для того, что предложим по умолчанию
   // (начатый только что приём или следующий по списку). Зависим от названия, а не от приёмов дня:
   // обновление страницы с сервера (возврат в приложение) не перезапрашивает список.
   const recipesFor = choiceMealName(mealDefaults().meal, meals);
@@ -343,8 +346,8 @@ export function FoodSearch({
             }`}
           >
             {label}
-            {/* Счётчик блюд — только когда умещается: на 320 px «Мои блюда · 12» переносилось. */}
-            {t === "recipes" && recipes?.length ? <span className="max-[400px]:hidden"> · {recipes.length}</span> : null}
+            {/* Счётчик блюд — только когда умещается: на 320 px «Блюда · 123» обрезалось бы. */}
+            {t === "recipes" && recipes?.length ? <span className="max-[359px]:hidden"> · {recipes.length}</span> : null}
           </button>
         ))}
       </div>
@@ -355,6 +358,7 @@ export function FoodSearch({
           date={date}
           meals={meals}
           plan={plan}
+          order={order}
           showTimes={showTimes}
           isToday={isToday}
           preferred={preferred}
@@ -367,7 +371,9 @@ export function FoodSearch({
             <ul className="divide-y divide-line">{recipes.map(recipeRow)}</ul>
           ) : (
             <p className="text-[15px] leading-relaxed text-ink-2">
-              {recipes ? "Своих блюд пока нет. Соберите блюдо из ингредиентов или сохраните любую запись дневника." : "Загружаю…"}
+              {recipes
+                ? "Блюд пока нет. Соберите блюдо из ингредиентов, сохраните запись дневника или опишите еду на вкладке «Текст» и добавьте «Одним блюдом»."
+                : "Загружаю…"}
             </p>
           )}
           <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[15px] font-semibold text-accent">
@@ -435,7 +441,7 @@ export function FoodSearch({
       )}
       {searchOffline && query.trim().length >= 2 && (
         <p className="mt-3 rounded-2xl bg-surface px-4 py-3 text-[15px] text-ink-2">
-          Нет сети — поиск недоступен. Добавить можно из недавних и «Моих блюд»: запись отправится, когда появится сеть.
+          Нет сети — поиск недоступен. Добавить можно из недавних и со вкладки «Блюда»: запись отправится, когда появится сеть.
         </p>
       )}
       {amount && (
@@ -455,7 +461,7 @@ export function FoodSearch({
 
       {foundRecipes.length > 0 && (
         <>
-          <Eyebrow className="mt-5">Мои блюда</Eyebrow>
+          <Eyebrow className="mt-5">Блюда</Eyebrow>
           <ul className="divide-y divide-line">{foundRecipes.map(recipeRow)}</ul>
         </>
       )}
@@ -521,12 +527,13 @@ export function FoodSearch({
       {picked && (
         <PortionSheet
           title={picked.kind === "food" ? picked.food.nameRu : picked.recipe.name}
-          subtitle={picked.kind === "food" ? (picked.food.brand ?? undefined) : "моё блюдо"}
+          subtitle={picked.kind === "food" ? (picked.food.brand ?? undefined) : "блюдо"}
           per100g={picked.kind === "food" ? picked.food.nutrientsPer100g : picked.recipe.nutrientsPer100g}
           initialGrams={picked.grams}
           portion={picked.kind === "food" ? portionOf(picked.food) : recipePortion(picked.recipe)}
           meals={meals}
           plan={plan}
+          order={order}
           showTimes={showTimes}
           initialMeal={picked.meal}
           defaultNewTime={picked.newTime}

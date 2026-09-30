@@ -44,6 +44,15 @@ body {
   color: var(--color-ink);
 }
 
+/*
+ * Вбок страница не прокручивается никогда — и не пружинит («люфт» в Safari и
+ * WKWebView). Пружину по вертикали выключает ui/OverscrollGuard, пока страница
+ * умещается в экран: у длинных она остаётся.
+ */
+html {
+  overscroll-behavior-x: none;
+}
+
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
