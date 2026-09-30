@@ -27,6 +27,8 @@
 
 :root {
   color-scheme: light;
+  /* Высота экрана под страницу: body уже отступил сверху под чёлку (см. ниже). */
+  --app-h: calc(100dvh - env(safe-area-inset-top));
 }
 
 html,
@@ -39,9 +41,32 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
-  /* Отступы под чёлку и индикатор «Домой» в полноэкранном PWA */
+  /*
+   * Отступ под чёлку в полноэкранном PWA и приложении. Снизу отступа у body нет:
+   * контент прокручивается под индикатор «Домой», а концы страниц и нижние панели
+   * сами добавляют env(safe-area-inset-bottom). Иначе min-h-dvh + отступы body
+   * давали прокрутку на пустых экранах, а липкая кнопка внизу прыгала в конце.
+   */
   padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+  /* Длинные названия товаров, email и ссылки переносятся, а не распирают экран вбок */
+  overflow-wrap: break-word;
+  /*
+   * Страховка от горизонтальной прокрутки (настоящие причины чинятся на месте).
+   * Только на body: значение уходит во viewport, а прокрутка остаётся у окна —
+   * position: sticky и блокировка прокрутки листами (body.style.overflow) работают.
+   * clip, а не hidden: hidden сделал бы body прокручиваемым контейнером.
+   */
+  overflow-x: clip;
+}
+
+/* Страница на весь экран без лишней прокрутки: вместе с отступом body — ровно 100dvh. */
+@utility min-h-app {
+  min-height: var(--app-h);
+}
+
+/* Липкая панель внизу (BottomBar): поле в фокусе прокручивается выше неё, а не под неё. */
+html:has([data-bottom-bar]) {
+  scroll-padding-bottom: calc(140px + env(safe-area-inset-bottom));
 }
 
 /* Цифры одинаковой ширины: 2 458 не «прыгает» при обновлении */

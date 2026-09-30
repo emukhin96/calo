@@ -49,7 +49,8 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-10">
+    // min-h-app, а не min-h-dvh: вместе с отступом body под чёлку экран входа не прокручивается.
+    <main className="mx-auto flex min-h-app max-w-md flex-col justify-center px-6 pt-10 pb-[calc(40px+env(safe-area-inset-bottom))]">
       <Eyebrow>Calo</Eyebrow>
       <h1 className="mt-2 font-display text-[40px] leading-tight font-extrabold">Вход</h1>
 
@@ -71,7 +72,7 @@ export default function LoginPage() {
 
       {state === "sent" ? (
         <p className="text-[17px] leading-relaxed text-ink-2">
-          Ссылка для входа отправлена на <b className="text-ink">{email}</b>. Она действует 15 минут.
+          Ссылка для входа отправлена на <b className="text-ink wrap-anywhere">{email}</b>. Она действует 15 минут.
         </p>
       ) : (
         <form onSubmit={sendLink} className="space-y-4">
@@ -104,7 +105,7 @@ export default function LoginPage() {
             placeholder="https://calc.egor.am/api/auth/magic-link/…"
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
-            className="h-[52px] w-full rounded-2xl border border-line bg-surface px-4 text-[15px] outline-none focus:border-accent"
+            className="h-[52px] w-full rounded-2xl border border-line bg-surface px-4 text-[17px] outline-none focus:border-accent"
           />
           <Button type="submit" disabled={!pasted.trim()}>
             Войти по ссылке

@@ -33,7 +33,7 @@ export function HealthBanner() {
 
   return (
     <div className="mt-6 flex items-center gap-4 rounded-2xl bg-surface p-4 shadow-sm">
-      <p className="flex-1 text-[15px] leading-snug text-ink-2">
+      <p className="min-w-0 flex-1 text-[15px] leading-snug text-ink-2">
         Записывать съеденное в «Здоровье» и брать оттуда вес.{" "}
         <button type="button" onClick={dismiss} className="text-ink-3 underline">
           Не сейчас
@@ -43,7 +43,7 @@ export function HealthBanner() {
         type="button"
         onClick={connect}
         disabled={busy}
-        className="rounded-xl bg-accent px-4 py-2.5 text-[15px] font-bold text-white disabled:opacity-50"
+        className="shrink-0 rounded-xl bg-accent px-4 py-2.5 text-[15px] font-bold text-white disabled:opacity-50"
       >
         Подключить
       </button>
