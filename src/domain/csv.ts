@@ -1,9 +1,20 @@
 // Выгрузка дневника в CSV для Excel/Numbers: разделитель «;» и десятичная
 // запятая — так русская локаль открывает файл двойным щелчком без мастера импорта.
-import { MEAL_RU, type Meal, zonedParts } from "./day";
+import { zonedParts } from "./day";
 import { NUTRIENT_KEYS, NUTRIENT_UNITS, type NutrientVector } from "./nutrients";
 
-export type CsvEntry = { eatenAt: Date; meal: Meal; title: string; grams: number; nutrients: NutrientVector };
+/**
+ * mealName — название приёма пищи как в дневнике («Второй завтрак»); date —
+ * день приёма «YYYY-MM-DD» (без него — местный день eatenAt).
+ */
+export type CsvEntry = {
+  eatenAt: Date;
+  date?: string;
+  mealName: string;
+  title: string;
+  grams: number;
+  nutrients: NutrientVector;
+};
 
 const HEAD_RU: Record<(typeof NUTRIENT_KEYS)[number], string> = {
   kcal: "Ккал", protein: "Белки", fat: "Жиры", carbs: "Углеводы", fiber: "Клетчатка", sugar: "Сахара",
@@ -26,7 +37,7 @@ export function entriesToCsv(entries: CsvEntry[], tz: string): string {
   const rows = entries.map((e) => {
     const p = zonedParts(e.eatenAt, tz);
     const time = `${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
-    return [p.date, time, MEAL_RU[e.meal], e.title, num(e.grams), ...NUTRIENT_KEYS.map((k) => num(e.nutrients[k]))];
+    return [e.date ?? p.date, time, e.mealName, e.title, num(e.grams), ...NUTRIENT_KEYS.map((k) => num(e.nutrients[k]))];
   });
   // BOM — чтобы Excel распознал UTF-8 и кириллицу.
   return "﻿" + [header, ...rows].map((r) => r.map(cell).join(";")).join("\r\n") + "\r\n";

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { GoalInput, ProfileInput } from "@/db/profile";
@@ -13,6 +12,7 @@ import { formatInt } from "@/ui/format";
 import { fmtAmount, NUTRIENT_LABELS, unitRu } from "@/ui/nutrients";
 import { HealthToggle } from "@/ui/HealthToggle";
 import { PushToggle } from "@/ui/PushToggle";
+import { MealPlanSection } from "./MealPlanSection";
 
 type Weight = { id: string; kg: number; at: string };
 type Props = {
@@ -22,6 +22,9 @@ type Props = {
   weights: Weight[];
   norms: Norms;
   overrides: Partial<Record<NutrientKey, number>>;
+  /** Свой список приёмов пищи по порядку и показ их времени. */
+  mealPlan: string[];
+  showMealTimes: boolean;
 };
 
 const KIND_RU = { min: "не меньше", target: "около", limit: "не больше" } as const;
@@ -82,16 +85,12 @@ export function Settings(p: Props) {
   }
 
   return (
-    <main className="mx-auto max-w-xl px-6 pt-6 pb-24">
-      <div className="flex items-center justify-between">
-        <Eyebrow>Настройки</Eyebrow>
-        <Link href="/" className="text-[16px] font-semibold text-accent">
-          Готово
-        </Link>
-      </div>
+    <main className="mx-auto max-w-xl px-6 pt-6 pb-tabbar">
+      <Eyebrow>Цель, нормы и настройки</Eyebrow>
+      <h1 className="mt-2 font-display text-[28px] font-extrabold">Профиль</h1>
 
-      <div className="mt-4 rounded-2xl bg-surface px-5 py-4">
-        <div className="flex items-baseline gap-2">
+      <div className="mt-5 rounded-2xl bg-surface px-5 py-4">
+        <div className="flex flex-wrap items-baseline gap-x-2">
           <span className="tabular font-display text-[34px] font-extrabold">{formatInt(p.norms.kcal)}</span>
           <span className="text-[15px] text-ink-2">ккал в день</span>
         </div>
@@ -148,7 +147,8 @@ export function Settings(p: Props) {
       </div>
 
       {(dirty || message) && (
-        <div className="sticky bottom-[calc(12px+env(safe-area-inset-bottom))] mt-6">
+        // Над панелью вкладок, а не за ней.
+        <div data-bottom-bar className="sticky bottom-[calc(12px+var(--tabbar-space))] mt-6">
           {dirty && (
             <Button disabled={saving} onClick={saveProfile}>
               {saving ? "Сохраняю…" : "Сохранить и пересчитать нормы"}
@@ -160,6 +160,7 @@ export function Settings(p: Props) {
 
       <WeightSection weights={p.weights} />
       <NormsSection norms={p.norms} overrides={p.overrides} />
+      <MealPlanSection plan={p.mealPlan} showTimes={p.showMealTimes} />
 
       <HealthToggle />
 
@@ -173,8 +174,8 @@ export function Settings(p: Props) {
       <p className="mt-1 text-[13px] text-ink-3">Все записи с КБЖУ и витаминами — открывается в Excel и Numbers.</p>
 
       <SectionTitle>Аккаунт</SectionTitle>
-      <p className="text-[15px] text-ink-2">{p.email}</p>
-      <p className="mt-1 text-[14px] text-ink-3">Часовой пояс: {p.profile.timezone}</p>
+      <p className="text-[15px] text-ink-2 wrap-anywhere">{p.email}</p>
+      <p className="mt-1 text-[14px] text-ink-3 wrap-anywhere">Часовой пояс: {p.profile.timezone}</p>
       <button type="button" onClick={signOut} className="mt-4 text-[16px] font-semibold text-warn">
         Выйти
       </button>
@@ -218,14 +219,14 @@ function WeightSection({ weights }: { weights: Weight[] }) {
       )}
       <WeightChart weights={weights} />
       <div className="mt-4 flex items-end gap-3">
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <NumberField label="Новое взвешивание" unit="кг" value={kg} onChange={setKg} placeholder={current ? String(current.kg) : "70"} />
         </div>
         <button
           type="button"
           disabled={busy || value == null || value < 30 || value > 300}
           onClick={add}
-          className="h-[58px] rounded-2xl bg-accent px-5 text-[16px] font-bold text-white disabled:opacity-40"
+          className="h-[58px] shrink-0 rounded-2xl bg-accent px-5 text-[16px] font-bold text-white disabled:opacity-40"
         >
           Записать
         </button>
@@ -309,29 +310,34 @@ function NormsSection({ norms, overrides }: { norms: Norms; overrides: Partial<R
           return (
             <li key={k} className="py-2.5">
               {editing === k ? (
-                <div className="flex items-center gap-2">
-                  <span className="flex-1 text-[15px] font-semibold">{NUTRIENT_LABELS[k]}</span>
-                  <input
-                    autoFocus
-                    inputMode="decimal"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value.replace(/[^\d.,]/g, ""))}
-                    className="tabular w-24 rounded-xl border border-line bg-surface px-3 py-1.5 text-right text-[15px] outline-none focus:border-accent"
-                  />
-                  <span className="w-8 text-[14px] text-ink-3">{unitRu(k)}</span>
-                  <button
-                    type="button"
-                    disabled={parseNum(value) == null}
-                    onClick={() => save(k, parseNum(value))}
-                    className="rounded-xl bg-accent px-3 py-1.5 text-[14px] font-bold text-white disabled:opacity-40"
-                  >
-                    OK
-                  </button>
-                  {own && (
-                    <button type="button" onClick={() => save(k, null)} className="text-[13px] text-ink-3">
-                      сброс
+                // Название и поле с кнопками — в одну строку, а на узком экране поле
+                // переносится под название (раньше строка была шире 320px).
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                  <span className="min-w-0 grow text-[15px] font-semibold">{NUTRIENT_LABELS[k]}</span>
+                  <div className="ml-auto flex shrink-0 items-center gap-2">
+                    <input
+                      autoFocus
+                      aria-label={NUTRIENT_LABELS[k]}
+                      inputMode="decimal"
+                      value={value}
+                      onChange={(e) => setValue(e.target.value.replace(/[^\d.,]/g, ""))}
+                      className="tabular w-20 rounded-xl border border-line bg-surface px-3 py-1.5 text-right text-[16px] outline-none focus:border-accent"
+                    />
+                    <span className="w-8 text-[14px] text-ink-3">{unitRu(k)}</span>
+                    <button
+                      type="button"
+                      disabled={parseNum(value) == null}
+                      onClick={() => save(k, parseNum(value))}
+                      className="rounded-xl bg-accent px-3 py-1.5 text-[14px] font-bold text-white disabled:opacity-40"
+                    >
+                      OK
                     </button>
-                  )}
+                    {own && (
+                      <button type="button" onClick={() => save(k, null)} className="text-[13px] text-ink-3">
+                        сброс
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <button
@@ -342,12 +348,12 @@ function NormsSection({ norms, overrides }: { norms: Norms; overrides: Partial<R
                   }}
                   className="flex w-full items-baseline gap-2 text-left"
                 >
-                  <span className="flex-1 text-[15px] text-ink">
+                  <span className="min-w-0 flex-1 text-[15px] text-ink">
                     {NUTRIENT_LABELS[k]}
                     {own && <span className="ml-2 font-mono text-[11px] text-accent uppercase">моя</span>}
                   </span>
                   <span className="text-[13px] text-ink-3">{KIND_RU[n.kind]}</span>
-                  <span className="tabular w-24 text-right text-[15px] font-semibold">
+                  <span className="tabular w-24 shrink-0 text-right text-[15px] font-semibold">
                     {fmtAmount(n.value)} {unitRu(k)}
                   </span>
                 </button>

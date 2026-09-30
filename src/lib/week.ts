@@ -1,9 +1,9 @@
 import "server-only";
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { listEntries } from "@/db/entries";
-import { entries, weeklyReports, weightLog } from "@/db/schema";
-import { addDays, dayRange, todayIn, weekDates, weekStart, zonedParts } from "@/domain/day";
+import { dayMeals, weeklyReports, weightLog } from "@/db/schema";
+import { addDays, dayRange, todayIn, weekDates, weekStart } from "@/domain/day";
 import type { Norms } from "@/domain/norms";
 import { buildWeekReport, type DayEntry, summarizeWeek, type WeekReport } from "@/domain/week";
 import { readFileSync } from "node:fs";
@@ -25,10 +25,10 @@ function densities() {
 /** Последняя закончившаяся неделя (понедельник). */
 export const lastCompleteWeek = (tz: string) => addDays(weekStart(todayIn(tz)), -7);
 
-async function entriesByLocalDate(ownerId: string, from: string, days: number, tz: string): Promise<DayEntry[]> {
-  const range = { start: dayRange(from, tz).start, end: dayRange(addDays(from, days - 1), tz).end };
-  const rows = await listEntries(db, ownerId, range);
-  return rows.map((e) => ({ date: zonedParts(e.eatenAt, tz).date, nutrients: e.nutrients }));
+/** Записи по местным дням (день записи — день её приёма пищи, как на экране дня). */
+async function entriesByLocalDate(ownerId: string, from: string, days: number): Promise<DayEntry[]> {
+  const rows = await listEntries(db, ownerId, from, addDays(from, days - 1));
+  return rows.map((e) => ({ date: e.date, nutrients: e.nutrients }));
 }
 
 /** Изменение веса за неделю: последнее взвешивание недели − последнее до неё. */
@@ -62,7 +62,7 @@ export async function loadWeekReport(ownerId: string, monday: string, tz: string
   const norms = (stored?.norms as Norms | undefined) ?? current;
 
   const prevMonday = addDays(monday, -7);
-  const [all, weightKg] = await Promise.all([entriesByLocalDate(ownerId, prevMonday, 14, tz), weightChange(ownerId, monday, tz)]);
+  const [all, weightKg] = await Promise.all([entriesByLocalDate(ownerId, prevMonday, 14), weightChange(ownerId, monday, tz)]);
   const report: WeekReport = buildWeekReport(monday, {
     week: summarizeWeek(weekDates(monday), all, norms),
     prev: summarizeWeek(weekDates(prevMonday), all, norms),
@@ -92,7 +92,8 @@ export async function markWeekSeen(ownerId: string, monday: string) {
 
 /**
  * Показать ли разбор при открытии приложения: прошлая неделя закончилась,
- * в ней хотя бы 3 дня с записями, и разбор ещё не закрывали кнопкой «Понятно».
+ * в ней хотя бы 3 дня с записями, и разбор ещё не видели (открывшийся разбор
+ * отмечается просмотренным сразу — week/UnderstoodButton).
  */
 export async function shouldShowWeek(ownerId: string, tz: string): Promise<boolean> {
   const monday = lastCompleteWeek(tz);
@@ -101,15 +102,10 @@ export async function shouldShowWeek(ownerId: string, tz: string): Promise<boole
     .from(weeklyReports)
     .where(and(eq(weeklyReports.ownerId, ownerId), eq(weeklyReports.weekStart, monday)));
   if (report?.seenAt) return false;
+  // Пустых приёмов не бывает: день с приёмом пищи — день с записями.
   const [{ days }] = await db
-    .select({ days: sql<number>`count(distinct (${entries.eatenAt} at time zone ${tz})::date)` })
-    .from(entries)
-    .where(
-      and(
-        eq(entries.ownerId, ownerId),
-        gte(entries.eatenAt, dayRange(monday, tz).start),
-        lt(entries.eatenAt, dayRange(addDays(monday, 6), tz).end),
-      ),
-    );
+    .select({ days: sql<number>`count(distinct ${dayMeals.date})` })
+    .from(dayMeals)
+    .where(and(eq(dayMeals.ownerId, ownerId), gte(dayMeals.date, monday), lte(dayMeals.date, addDays(monday, 6))));
   return Number(days) >= 3;
 }

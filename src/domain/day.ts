@@ -83,22 +83,16 @@ export function mealByHour(hour: number): Meal {
   return "snack";
 }
 
-const MEAL_TIME: Record<Meal, [number, number]> = {
+/**
+ * Типичное местное время приёма: запись в прошлый день без явного времени
+ * встаёт на него (POST /api/entries, domain/meals.ts PRESET_TIME).
+ */
+export const MEAL_TIME: Record<Meal, [number, number]> = {
   breakfast: [8, 30],
   lunch: [13, 30],
   snack: [16, 30],
   dinner: [19, 30],
 };
-
-/**
- * Когда записать приём пищи: сегодня — «сейчас», в другой день — типичное
- * время этого приёма (порядок записей в прошлых днях остаётся осмысленным).
- */
-export function eatenAtFor(date: string, meal: Meal, tz: string, now = new Date()): Date {
-  if (date === todayIn(tz, now)) return now;
-  const [h, m] = MEAL_TIME[meal];
-  return zonedTime(date, h, m, tz);
-}
 
 /** «вторник, 29 сентября» / «Сегодня» / «Вчера». */
 export function dayTitle(date: string, tz: string, now = new Date()): string {

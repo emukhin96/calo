@@ -3,6 +3,7 @@
 // многопользовательское, даже пока вход открыт одному человеку.
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   date,
   doublePrecision,
   index,
@@ -97,12 +98,40 @@ export const recipeIngredients = pgTable(
   (t) => [index("recipe_ingredients_recipe_idx").on(t.recipeId)],
 );
 
-/** Дневник. nutrients — снимок на момент записи: правка продукта не меняет историю. */
+/**
+ * Приёмы пищи дня: «Завтрак», «Перекус», «Второй завтрак»… — любые названия,
+ * порядок в дне — position (по возрастанию; дробные значения — вставка между
+ * соседями). date — местный день пользователя. Пустых приёмов не бывает:
+ * приём удаляется вместе с последней записью (db/meals.ts).
+ */
+export const dayMeals = pgTable(
+  "day_meals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: ownerId(),
+    date: date("date").notNull(),
+    name: text("name").notNull(),
+    position: doublePrecision("position").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("day_meals_owner_date_idx").on(t.ownerId, t.date)],
+);
+
+/**
+ * Дневник. nutrients — снимок на момент записи: правка продукта не меняет историю.
+ * Запись принадлежит приёму пищи дня (meal_id); местный день eaten_at совпадает
+ * с днём приёма. meal — вид приёма (завтрак/обед/…), пересчитывается по
+ * названию приёма и часу (domain/meals.ts mealKindOf): по нему «Мои блюда»
+ * ранжируются под приём.
+ */
 export const entries = pgTable(
   "entries",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     ownerId: ownerId(),
+    mealId: uuid("meal_id")
+      .notNull()
+      .references(() => dayMeals.id, { onDelete: "cascade" }),
     eatenAt: timestamp("eaten_at", { withTimezone: true }).notNull(),
     meal: meal("meal").notNull(),
     inputMethod: inputMethod("input_method").notNull(),
@@ -117,7 +146,7 @@ export const entries = pgTable(
     note: text("note"),
     createdAt: createdAt(),
   },
-  (t) => [index("entries_owner_eaten_idx").on(t.ownerId, t.eatenAt)],
+  (t) => [index("entries_owner_eaten_idx").on(t.ownerId, t.eatenAt), index("entries_meal_idx").on(t.mealId)],
 );
 
 export const profiles = pgTable("profiles", {
@@ -129,6 +158,10 @@ export const profiles = pgTable("profiles", {
   heightCm: real("height_cm").notNull(),
   activity: activity("activity").notNull(),
   timezone: text("timezone").notNull().default("Europe/Moscow"),
+  /** Свой порядок приёмов пищи (domain/meals.ts DEFAULT_MEAL_PLAN): новые приёмы дня встают по нему. */
+  mealPlan: text("meal_plan").array().notNull().default(sql`'{Завтрак,Обед,Перекус,Ужин}'::text[]`),
+  /** Показывать время приёмов пищи — по умолчанию только порядок. */
+  showMealTimes: boolean("show_meal_times").notNull().default(false),
   onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()

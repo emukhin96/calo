@@ -25,3 +25,11 @@ export const OverrideBody = z.object({
   nutrient: z.enum(NUTRIENT_KEYS),
   value: z.number().positive().max(100000).nullable(),
 });
+
+/** Настройки приёмов пищи (PUT /api/profile/meals); plan нормализует domain/meals.ts normalizeMealPlan. */
+export const MealSettingsBody = z
+  .object({
+    plan: z.array(z.string().max(200)).min(1).max(40).optional(),
+    showTimes: z.boolean().optional(),
+  })
+  .refine((b) => b.plan != null || b.showTimes != null);

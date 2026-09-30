@@ -81,12 +81,17 @@ export function ButtonLink(props: ComponentProps<typeof Link>) {
 /**
  * Лист снизу, как на скриншоте: серый фон сверху, скруглённый светлый лист до низа экрана.
  * Серый фон заходит под чёлку (-mt на отступ body), поэтому высота ровно 100dvh:
- * короткий разбор не прокручивается.
+ * короткий разбор не прокручивается. tabBar — внизу панель вкладок: лист уходит
+ * под неё, а кнопка footer стоит над ней.
  */
-export function Sheet({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
+export function Sheet({ children, footer, tabBar = false }: { children: ReactNode; footer?: ReactNode; tabBar?: boolean }) {
   return (
     <div className="-mt-[env(safe-area-inset-top)] flex min-h-dvh flex-col bg-backdrop pt-[calc(12px+env(safe-area-inset-top))]">
-      <div className="mx-auto flex w-full max-w-xl flex-1 flex-col rounded-t-[var(--radius-sheet)] bg-bg px-6 pt-7 pb-[calc(32px+env(safe-area-inset-bottom))]">
+      <div
+        className={`mx-auto flex w-full max-w-xl flex-1 flex-col rounded-t-[var(--radius-sheet)] bg-bg px-6 pt-7 ${
+          tabBar ? "pb-[calc(24px+var(--tabbar-space))]" : "pb-[calc(32px+env(safe-area-inset-bottom))]"
+        }`}
+      >
         <div className="flex-1">{children}</div>
         {footer && <div className="pt-8">{footer}</div>}
       </div>
@@ -108,24 +113,6 @@ export function BottomBar({ children, className = "" }: { children: ReactNode; c
       className={`sticky bottom-0 z-10 -mx-6 bg-bg px-6 pt-4 pb-[calc(16px+env(safe-area-inset-bottom))] before:pointer-events-none before:absolute before:inset-x-0 before:-top-6 before:h-6 before:bg-linear-to-b before:from-bg/0 before:to-bg ${className}`}
     >
       {children}
-    </div>
-  );
-}
-
-/** Полоска прогресса нутриента: «Белок 96 / 130 г». */
-export function MacroBar({ label, value, norm, unit = "г", color }: { label: string; value: number; norm: number; unit?: string; color: string }) {
-  const pct = Math.min(100, (value / norm) * 100);
-  return (
-    <div>
-      <div className="mb-1.5 flex justify-between text-[15px]">
-        <span className="font-semibold text-ink">{label}</span>
-        <span className="tabular text-ink-2">
-          {formatInt(value)} / {formatInt(norm)} {unit}
-        </span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-line">
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-      </div>
     </div>
   );
 }

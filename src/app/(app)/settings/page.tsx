@@ -7,7 +7,7 @@ import { Settings } from "./Settings";
 
 export default async function SettingsPage() {
   const session = await requireSession();
-  const { state, norms } = await loadUser(session.user.id);
+  const { state, norms, mealPlan, showMealTimes } = await loadUser(session.user.id);
   if (!state.profile || !state.goal || !state.weight || !norms) redirect("/onboarding");
   const weights = await weightHistory(db, session.user.id);
   return (
@@ -18,6 +18,8 @@ export default async function SettingsPage() {
       weights={weights.map((w) => ({ id: w.id, kg: w.kg, at: w.measuredAt.toISOString() }))}
       norms={norms}
       overrides={state.overrides}
+      mealPlan={mealPlan}
+      showMealTimes={showMealTimes}
     />
   );
 }

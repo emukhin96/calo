@@ -22,10 +22,13 @@ export default async function WeekPage({ searchParams }: PageProps<"/week">) {
   const r = data.report;
   const inProgress = monday === current;
   const label = inProgress ? "Эта неделя · идёт" : monday === latest ? "Неделя позади" : weekTitle(monday);
+  // «Понятно» — только у разбора, который открылся сам (прошлая неделя, ещё не просмотрен;
+  // кнопка же и отмечает его просмотренным): в остальных случаях уйти можно вкладками.
+  const footer = monday === latest && !data.seen ? <UnderstoodButton weekStart={monday} /> : undefined;
 
   return (
-    <Sheet footer={<UnderstoodButton weekStart={monday} />}>
-      <div className="flex items-center justify-between">
+    <Sheet tabBar footer={footer}>
+      <div className="flex items-center justify-between gap-3">
         <Eyebrow>{label}</Eyebrow>
         <div className="flex gap-1">
           <WeekLink monday={addDays(monday, -7)} label="Предыдущая неделя">‹</WeekLink>

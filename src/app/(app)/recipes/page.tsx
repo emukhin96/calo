@@ -4,22 +4,19 @@ import { listRecipes } from "@/db/recipes";
 import { requireSession } from "@/lib/session";
 import { Eyebrow } from "@/ui/components";
 import { formatInt } from "@/ui/format";
+import { countOf } from "@/domain/text";
 
 /** «Мои блюда»: рецепты из ингредиентов и шаблоны со своим КБЖУ. */
 export default async function RecipesPage() {
   const session = await requireSession();
   const items = await listRecipes(db, session.user.id);
   return (
-    <main className="mx-auto max-w-xl px-6 pt-6 pb-24">
-      <div className="flex items-center justify-between">
-        <Eyebrow>Мои блюда</Eyebrow>
-        <Link href="/" className="text-[16px] font-semibold text-accent">
-          Готово
-        </Link>
-      </div>
+    <main className="mx-auto max-w-xl px-6 pt-6 pb-tabbar">
+      <Eyebrow>{items.length > 0 ? countOf(items.length, ["блюдо", "блюда", "блюд"]) : "Блюда"}</Eyebrow>
       <h1 className="mt-2 font-display text-[28px] font-extrabold">Мои блюда</h1>
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      {/* Две карточки в ряд, если помещаются; на узком экране (320px) — друг под другом */}
+      <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3">
         <Link href="/recipes/new?kind=composite" className="rounded-2xl bg-accent px-4 py-3 text-[15px] font-bold text-white">
           + Из ингредиентов
           <span className="block text-[13px] font-normal opacity-80">паста, салат, каша</span>

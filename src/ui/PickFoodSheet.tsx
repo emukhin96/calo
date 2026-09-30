@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FoodResult } from "@/db/foods";
 import type { NutrientVector } from "@/domain/nutrients";
+import { BottomSheet } from "./BottomSheet";
 import { Eyebrow } from "./components";
 
 type OffItem = { code: string; nameRu: string; brand: string | null; nutrientsPer100g: NutrientVector };
@@ -13,6 +14,8 @@ const fmt = (x: number | null | undefined, digits = 1) =>
 /**
  * Лист снизу «какой продукт?»: поиск по справочнику и Open Food Facts, выбор
  * возвращается вызывающему экрану (позиция разбора текста), а не создаёт запись.
+ * Поле поиска — в фокусе сразу; лист (BottomSheet) стоит над клавиатурой, и
+ * результаты прокручиваются в оставшейся над ней части экрана.
  */
 export function PickFoodSheet({ title, initialQuery, onPick, onClose }: { title: string; initialQuery: string; onPick: (food: FoodResult) => void; onClose: () => void }) {
   const [q, setQ] = useState(initialQuery);
@@ -21,17 +24,6 @@ export function PickFoodSheet({ title, initialQuery, onPick, onClose }: { title:
   const [off, setOff] = useState<OffItem[] | null>(null);
   const [offState, setOffState] = useState<"idle" | "loading" | "error">("idle");
   const seq = useRef(0);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = overflow;
-    };
-  }, [onClose]);
 
   const query = q.trim();
   const items = found && found.q === query ? found.items : null;
@@ -61,8 +53,8 @@ export function PickFoodSheet({ title, initialQuery, onPick, onClose }: { title:
 
   /** Товар OFF сохраняется в справочник (как во вкладке «Продукт») и сразу выбирается. */
   async function pickOff(item: OffItem) {
-    const res = await fetch(`/api/foods/barcode/${item.code}`);
-    if (!res.ok) return;
+    const res = await fetch(`/api/foods/barcode/${item.code}`).catch(() => null);
+    if (!res?.ok) return;
     onPick((await res.json()) as FoodResult);
   }
 
@@ -82,15 +74,8 @@ export function PickFoodSheet({ title, initialQuery, onPick, onClose }: { title:
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/30" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Продукт для «${title}»`}
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[88dvh] w-full max-w-xl flex-col rounded-t-[var(--radius-sheet)] bg-bg px-6 pt-6 pb-[calc(16px+env(safe-area-inset-bottom))]"
-      >
-        <div className="mx-auto mb-4 h-1.5 w-10 shrink-0 rounded-full bg-line" />
+    <BottomSheet label={`Продукт для «${title}»`} onClose={onClose}>
+      <div className="flex min-h-0 flex-col px-6">
         <div className="flex shrink-0 items-baseline justify-between gap-3">
           <Eyebrow className="!text-[13px] truncate">продукт для «{title}»</Eyebrow>
           <button type="button" className="shrink-0 text-[15px] font-semibold text-accent" onClick={onClose}>
@@ -107,7 +92,7 @@ export function PickFoodSheet({ title, initialQuery, onPick, onClose }: { title:
           placeholder="название продукта"
           className="mt-3 h-[52px] w-full shrink-0 rounded-[var(--radius-button)] border border-line bg-surface px-5 text-[17px] outline-none focus:border-accent"
         />
-        <div className="mt-2 min-h-0 flex-auto overflow-y-auto">
+        <div className="mt-2 min-h-0 flex-auto overflow-y-auto overscroll-contain">
           {items && items.length > 0 && <ul className="divide-y divide-line">{items.map(row)}</ul>}
           {items && items.length === 0 && (
             <p className="py-4 text-[15px] leading-relaxed text-ink-2">
@@ -149,6 +134,6 @@ export function PickFoodSheet({ title, initialQuery, onPick, onClose }: { title:
           )}
         </div>
       </div>
-    </div>
+    </BottomSheet>
   );
 }

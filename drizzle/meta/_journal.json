@@ -36,6 +36,20 @@
       "when": 1790687747140,
       "tag": "0004_silent_black_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790727284289,
+      "tag": "0005_familiar_falcon",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790764355220,
+      "tag": "0006_day_meals",
+      "breakpoints": true
     }
   ]
 }

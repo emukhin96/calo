@@ -1,9 +1,12 @@
 // Профиль, цель, вес и ручные нормы. Цель и вес — история (новая строка на
 // каждое изменение), текущие значения — последние строки. ARCHITECTURE.md §4.
 import { and, desc, eq } from "drizzle-orm";
+import { DEFAULT_MEAL_PLAN } from "@/domain/meals";
 import type { NutrientKey } from "@/domain/nutrients";
 import type { Activity, GoalKind, Sex } from "@/domain/norms";
 import type { DB } from ".";
+import { NotFoundError } from "./errors";
+import type { Conn } from "./meals";
 import { goals, normsOverride, profiles, weightLog } from "./schema";
 
 export type ProfileInput = {
@@ -20,7 +23,14 @@ export type UserState = {
   goal: GoalInput | null;
   weight: { kg: number; measuredAt: Date } | null;
   overrides: Partial<Record<NutrientKey, number>>;
+  /** Свой порядок приёмов пищи (до онбординга — по умолчанию). */
+  mealPlan: string[];
+  /** Показывать время приёмов пищи. */
+  showMealTimes: boolean;
 };
+
+/** Настройки приёмов пищи из Профиля: список по порядку и показ времени. */
+export type MealSettings = { plan: string[]; showTimes: boolean };
 
 export async function getUserState(db: DB, ownerId: string): Promise<UserState> {
   const [[p], [g], [w], overrides] = await Promise.all([
@@ -36,7 +46,42 @@ export async function getUserState(db: DB, ownerId: string): Promise<UserState> 
     goal: g ? { kind: g.kind, rateKgPerWeek: g.rateKgPerWeek, targetWeightKg: g.targetWeightKg } : null,
     weight: w ? { kg: w.weightKg, measuredAt: w.measuredAt } : null,
     overrides: Object.fromEntries(overrides.map((o) => [o.nutrient, o.value])),
+    mealPlan: p?.mealPlan?.length ? p.mealPlan : [...DEFAULT_MEAL_PLAN],
+    showMealTimes: p?.showMealTimes ?? false,
   };
+}
+
+/** Список приёмов и показ времени; профиля ещё нет — по умолчанию. */
+export async function getMealSettings(db: Conn, ownerId: string): Promise<MealSettings> {
+  const [p] = await db
+    .select({ plan: profiles.mealPlan, showTimes: profiles.showMealTimes })
+    .from(profiles)
+    .where(eq(profiles.ownerId, ownerId));
+  return { plan: p?.plan?.length ? p.plan : [...DEFAULT_MEAL_PLAN], showTimes: p?.showTimes ?? false };
+}
+
+/**
+ * Сохранить настройки приёмов (plan — уже нормализованный, domain/meals.ts
+ * normalizeMealPlan). Приёмы в уже заполненных днях не меняются. Профиля
+ * нет (онбординг не пройден) — NotFoundError.
+ */
+export async function saveMealSettings(db: DB, ownerId: string, input: Partial<MealSettings>): Promise<MealSettings> {
+  const set = {
+    ...(input.plan ? { mealPlan: input.plan } : {}),
+    ...(input.showTimes != null ? { showMealTimes: input.showTimes } : {}),
+  };
+  if (Object.keys(set).length === 0) {
+    const [exists] = await db.select({ ownerId: profiles.ownerId }).from(profiles).where(eq(profiles.ownerId, ownerId));
+    if (!exists) throw new NotFoundError("profile not found");
+    return getMealSettings(db, ownerId);
+  }
+  const [p] = await db
+    .update(profiles)
+    .set(set)
+    .where(eq(profiles.ownerId, ownerId))
+    .returning({ plan: profiles.mealPlan, showTimes: profiles.showMealTimes });
+  if (!p) throw new NotFoundError("profile not found");
+  return p;
 }
 
 export async function saveProfile(db: DB, ownerId: string, input: ProfileInput): Promise<void> {

@@ -28,10 +28,12 @@ function write(q: QueuedEntry[]) {
 export const queued = () => read();
 
 /**
- * POST /api/entries; при сетевой ошибке — в очередь. Возвращает "sent" | "queued".
+ * POST /api/entries; при сетевой ошибке — в очередь. Возвращает "queued" или
+ * { mealId } — приём дня, в который встала запись (null — ответ не прочитался):
+ * разбор текста шлёт остальные позиции в приём, созданный первой.
  * Ошибки сервера (4xx/5xx) пробрасываются: их очередь не исправит.
  */
-export async function postEntry(body: Record<string, unknown>, title: string): Promise<"sent" | "queued"> {
+export async function postEntry(body: Record<string, unknown>, title: string): Promise<"queued" | { mealId: string | null }> {
   const payload = { ...body, eatenAt: new Date().toISOString() };
   let res: Response;
   try {
@@ -41,7 +43,8 @@ export async function postEntry(body: Record<string, unknown>, title: string): P
     return "queued";
   }
   if (!res.ok) throw new Error(`entry failed: ${res.status}`);
-  return "sent";
+  const entry = (await res.json().catch(() => null)) as { mealId?: unknown } | null;
+  return { mealId: typeof entry?.mealId === "string" ? entry.mealId : null };
 }
 
 /** Отправить очередь по порядку. Сеть пропала — остановиться; 4xx — выбросить запись. */
