@@ -4,7 +4,8 @@
 # ни в историю команд, ни в список процессов (только встроенные команды bash).
 # С Mac, со скрытым вводом (см. deploy/VPS.md):
 #   read -rs -p "Ключ: " KEY; echo; printf '%s\n' "$KEY" | ssh calc /opt/calc/deploy/vps/set-secret.sh ANTHROPIC_API_KEY; unset KEY
-# Для ANTHROPIC_API_KEY и GEMINI_API_KEY сразу проверяет ключ. В конце перезапускает приложение.
+# Для ANTHROPIC_API_KEY и GEMINI_API_KEY сразу проверяет ключ, для SMTP_URL — вход
+# в почту. В конце перезапускает приложение.
 ###############################################################################
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/lib.sh"
@@ -62,6 +63,19 @@ if [ "$NAME" = GEMINI_API_KEY ]; then
     *) echo "!! не удалось проверить ключ (HTTP ${code:-нет ответа})" ;;
   esac
   rm -f "$body"
+fi
+
+if [ "$NAME" = SMTP_URL ]; then
+  # Вход в SMTP (STARTTLS / TLS обязателен). Адрес с паролем — в конфиге curl из
+  # stdin, не в аргументах. Без --mail-rcpt письмо не уходит: только вход и HELP.
+  code=0
+  printf 'url = "%s"\n' "$VALUE" | curl -sS --ssl-reqd --max-time 20 -K - -o /dev/null || code=$?
+  case "$code" in
+    0) echo "✓ вход в почту работает" ;;
+    67) echo "!! почтовый сервер не принял логин или пароль" ;;
+    7 | 28) echo "!! нет соединения с почтовым сервером — у Hetzner закрыты 25 и 465, нужен smtp://…:587 (или 2525)" ;;
+    *) echo "!! не удалось проверить почту (curl $code)" ;;
+  esac
 fi
 
 if [ -z "${CALC_ENV_FILE:-}" ]; then
