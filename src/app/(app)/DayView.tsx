@@ -26,6 +26,7 @@ export function DayView({
   totals,
   meals,
   plan,
+  order,
   showTimes,
   weekKcal,
 }: {
@@ -36,8 +37,10 @@ export function DayView({
   totals: NutrientVector;
   /** Приёмы дня по порядку с записями — loadDay().meals. */
   meals: DayMealView[];
-  /** Свой список приёмов из Профиля: куда встаёт новый приём, кнопки пустого дня. */
+  /** Приёмы своего списка из Профиля, которые предлагаются (без скрытых): выбор приёма, кнопки пустого дня. */
   plan: string[];
+  /** Весь свой список, со скрытыми: куда встаёт новый приём. */
+  order?: string[];
   /** Показ времени приёмов включён в Профиле. */
   showTimes: boolean;
   /** Калории по дням недели date — только дни с записями (lib/week-strip). */
@@ -68,12 +71,12 @@ export function DayView({
       <HealthBanner />
 
       {meals.length > 0 ? (
-        <DayTimeline date={date} tz={tz} meals={meals} choices={choices} plan={plan} showTimes={showTimes} />
+        <DayTimeline date={date} tz={tz} meals={meals} choices={choices} plan={plan} order={order} showTimes={showTimes} />
       ) : (
         <EmptyDay date={date} plan={plan} />
       )}
 
-      <QuickAdd date={date} isToday={isToday} meals={choices} plan={plan} showTimes={showTimes} />
+      <QuickAdd date={date} isToday={isToday} meals={choices} plan={plan} order={order} showTimes={showTimes} />
     </main>
   );
 }

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { GoalInput, ProfileInput } from "@/db/profile";
+import type { MealPlanItem } from "@/domain/meals";
 import { ACTIVITY_RU, type Activity, GOAL_RU, type GoalKind, type Norms, type Sex } from "@/domain/norms";
 import { NUTRIENT_KEYS, type NutrientKey } from "@/domain/nutrients";
 import { authClient } from "@/lib/auth-client";
@@ -22,8 +23,8 @@ type Props = {
   weights: Weight[];
   norms: Norms;
   overrides: Partial<Record<NutrientKey, number>>;
-  /** Свой список приёмов пищи по порядку и показ их времени. */
-  mealPlan: string[];
+  /** Свой список приёмов пищи по порядку (со скрытыми) и показ их времени. */
+  mealItems: MealPlanItem[];
   showMealTimes: boolean;
 };
 
@@ -160,7 +161,7 @@ export function Settings(p: Props) {
 
       <WeightSection weights={p.weights} />
       <NormsSection norms={p.norms} overrides={p.overrides} />
-      <MealPlanSection plan={p.mealPlan} showTimes={p.showMealTimes} />
+      <MealPlanSection items={p.mealItems} showTimes={p.showMealTimes} />
 
       <HealthToggle />
 

@@ -39,14 +39,17 @@ export function QuickAdd({
   isToday,
   meals,
   plan,
+  order,
   showTimes,
 }: {
   date: string;
   isToday: boolean;
   /** Приёмы дня по порядку — кнопки выбора в листе порции (toDayMeals). */
   meals: DayMeal[];
-  /** Свой список приёмов из Профиля. */
+  /** Приёмы своего списка из Профиля, которые предлагаются (без скрытых). */
   plan: string[];
+  /** Весь свой список, со скрытыми: куда встанет новый приём. */
+  order?: string[];
   showTimes: boolean;
 }) {
   const router = useRouter();
@@ -210,6 +213,7 @@ export function QuickAdd({
           portion={portionOf(scan.food)}
           meals={meals}
           plan={plan}
+          order={order}
           showTimes={showTimes}
           // Лист читает приём один раз при открытии; правило то же, что на экране «Добавить».
           initialMeal={defaultMealChoice({ meals, plan, isToday })}

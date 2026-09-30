@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_MEAL_PLAN } from "@/domain/meals";
 import {
+  chipChoice,
+  chosenChip,
   type DayMeal,
   defaultMealChoice,
   isMealChoiceValid,
   localClock,
+  type MealChip,
   mealChoiceBody,
+  mealChips,
   newMealChoice,
   newMealIndex,
-  newMealName,
   newMealTime,
   nowTime,
   shortTime,
@@ -110,6 +113,7 @@ describe("defaultMealChoice", () => {
 
   it("сегодня — приём, в который добавляли за последние 90 минут", () => {
     expect(defaultMealChoice({ meals: day, plan: PLAN, isToday: true, now: at("14:20") })).toEqual({ kind: "existing", mealId: "l", name: "Обед" });
+    // до ужина по списку (19:30) больше двух часов — новый перекус в конце дня
     expect(defaultMealChoice({ meals: day, plan: PLAN, isToday: true, now: at("14:31") })).toEqual({
       kind: "new",
       name: "Перекус",
@@ -121,7 +125,7 @@ describe("defaultMealChoice", () => {
   it("дальше — следующий по списку пользователя, в пустой день — по часу", () => {
     expect(defaultMealChoice({ meals: day, plan: PLAN, isToday: false, now: at("14:20") })).toEqual({
       kind: "new",
-      name: "Перекус",
+      name: "Ужин",
       time: null,
       again: false,
     });
@@ -144,14 +148,14 @@ describe("defaultMealChoice", () => {
       time: null,
       again: false,
     });
-    // второе место «Перекуса» в списке: такой приём в дне уже есть — нужен ещё один
+    // «Перекус» в середине списка места не занимает: после обеда — «Ужин»
     const twice = ["Завтрак", "Перекус", "Обед", "Перекус", "Ужин"];
     const three = [meal("b", "Завтрак", "08:30"), meal("s", "Перекус", "11:00"), meal("l", "Обед", "13:00")];
     expect(defaultMealChoice({ meals: three, plan: twice, isToday: false, now: at("15:00") })).toEqual({
       kind: "new",
-      name: "Перекус",
+      name: "Ужин",
       time: null,
-      again: true,
+      again: false,
     });
   });
 
@@ -173,25 +177,6 @@ describe("defaultMealChoice", () => {
 });
 
 describe("новый приём", () => {
-  it("newMealName: следующий по списку, иначе по часу", () => {
-    const day = [meal("b", "Завтрак", "08:30"), meal("l", "Обед", "13:00")];
-    // недавний «Обед» не мешает: нужен именно новый
-    expect(newMealName({ meals: day, plan: PLAN, now: at("13:10") })).toBe("Перекус");
-    expect(newMealName({ meals: [], plan: PLAN, now: at("08:00") })).toBe("Завтрак");
-    const full = [meal("b", "Завтрак"), meal("l", "Обед"), meal("s", "Перекус"), meal("d", "Ужин")];
-    expect(newMealName({ meals: full, plan: PLAN, now: at("21:00") })).toBe("Ужин");
-    expect(newMealName({ meals: full, plan: PLAN, now: at("17:00") })).toBe("Перекус");
-    // после последнего занятого мест нет — незанятое раньше (по часу, если свободно), а не второй «Ужин»
-    const dinner = [meal("d", "Ужин")];
-    expect(newMealName({ meals: dinner, plan: PLAN, now: at("21:00") })).toBe("Завтрак");
-    expect(newMealName({ meals: dinner, plan: PLAN, now: at("13:00") })).toBe("Обед");
-    // повтор в списке — второе место «Перекуса»
-    const plan = ["Завтрак", "Перекус", "Обед", "Перекус", "Ужин"];
-    expect(newMealName({ meals: [meal("b", "Завтрак"), meal("s", "Перекус"), meal("l", "Обед")], plan, now: at("10:00") })).toBe(
-      "Перекус",
-    );
-  });
-
   it("newMealChoice: again — такой приём в дне уже есть", () => {
     const day = [meal("b", "Завтрак"), meal("s", "Перекус")];
     expect(newMealChoice(day, "перекус")).toEqual({ kind: "new", name: "перекус", time: null, again: true });
@@ -203,13 +188,19 @@ describe("новый приём", () => {
   it("newMealIndex: куда встанет по списку", () => {
     const day = [meal("b", "Завтрак"), meal("d", "Ужин")];
     expect(newMealIndex(day, "Обед", PLAN)).toBe(1);
-    expect(newMealIndex(day, "перекус", PLAN)).toBe(1);
+    // перекус — в любое время дня: новый встаёт в конец
+    expect(newMealIndex(day, "перекус", PLAN)).toBe(2);
     expect(newMealIndex([meal("l", "Обед")], "Завтрак", PLAN)).toBe(0);
     expect(newMealIndex(day, "Ужин", PLAN)).toBe(2); // второй «Ужин» — места в списке нет, в конец
     expect(newMealIndex(day, "Кофе", PLAN)).toBe(2);
     expect(newMealIndex([], "Обед", PLAN)).toBe(0);
     // приём не из списка остаётся на месте: «Обед» — после «Кофе»
     expect(newMealIndex([meal("b", "Завтрак"), meal("c", "Кофе"), meal("d", "Ужин")], "Обед", PLAN)).toBe(2);
+    // перекус в дне тоже на месте и в сравнении не участвует
+    expect(newMealIndex([meal("s", "Перекус"), meal("l", "Обед")], "Завтрак", PLAN)).toBe(1);
+    // весь список со скрытыми: скрытый «Полдник», набранный в «свой…», — на своём месте
+    const order = ["Завтрак", "Обед", "Полдник", "Ужин", "Перекус"];
+    expect(newMealIndex([meal("b", "Завтрак"), meal("l", "Обед"), meal("d", "Ужин")], "полдник", order)).toBe(2);
   });
 
   it("typicalMealTime: как решит сервер в прошлый день", () => {
@@ -222,6 +213,66 @@ describe("новый приём", () => {
   it("newMealTime: сегодня — «сейчас», в другой день — по названию", () => {
     expect(newMealTime(true, at("7:05"))).toBe("07:05");
     expect(newMealTime(false, at("7:05"))).toBeUndefined();
+  });
+});
+
+describe("кнопки выбора приёма", () => {
+  /** «Обед→l» — в приём l, «Ужин+» — новый приём, «Кофе=c» — кнопка приёма дня. */
+  const show = (chips: MealChip[]) =>
+    chips.map((c) => (c.kind === "plan" ? `${c.label}${c.join ? `→${c.join.id}` : "+"}` : `${c.label}=${c.meal.id}`));
+
+  it("пустой день — стандартный набор по списку: всё новые приёмы", () => {
+    expect(show(mealChips([], PLAN))).toEqual(["Завтрак+", "Обед+", "Ужин+", "Перекус+"]);
+    // повторы в списке — одна кнопка
+    expect(show(mealChips([], ["Завтрак", "Перекус", "Обед", "перекус"]))).toEqual(["Завтрак+", "Перекус+", "Обед+"]);
+  });
+
+  it("название, которое в дне есть, — в этот приём; приёмы не из списка — своими кнопками по порядку дня", () => {
+    const day = [meal("b", "Завтрак"), meal("s1", "Перекус"), meal("l", "Обед"), meal("c", "Кофе")];
+    // последний в дне — не перекус: «Перекус» — новый в конце дня
+    expect(show(mealChips(day, PLAN))).toEqual(["Завтрак→b", "Обед→l", "Ужин+", "Перекус+", "Кофе=c"]);
+    const snackLast = [meal("b", "Завтрак"), meal("s1", "Перекус"), meal("l", "Обед"), meal("s2", "Перекус")];
+    expect(show(mealChips(snackLast, PLAN))).toEqual(["Завтрак→b", "Обед→l", "Ужин+", "Перекус→s2"]);
+  });
+
+  it("скрытое название из дня — кнопкой приёма; повторы с подписью дня", () => {
+    const day = [meal("b", "Завтрак"), meal("s", "Перекус"), { ...meal("c1", "Кофе") }, { ...meal("c2", "Кофе"), label: "Кофе · 2" }];
+    expect(show(mealChips(day, ["Завтрак", "Обед", "Ужин"]))).toEqual(["Завтрак→b", "Обед+", "Ужин+", "Перекус=s", "Кофе=c1", "Кофе · 2=c2"]);
+  });
+
+  it("выбранный заранее приём, которого кнопка названия не выберет, — своей кнопкой с номером", () => {
+    const day = [meal("s1", "Перекус"), meal("l", "Обед"), meal("s2", "Перекус")];
+    expect(show(mealChips(day, PLAN, ["s1", null]))).toEqual(["Завтрак+", "Обед→l", "Ужин+", "Перекус→s2", "Перекус · 1=s1"]);
+    // его выберет кнопка названия — отдельной не нужно
+    expect(show(mealChips(day, PLAN, ["s2", "l"]))).toEqual(["Завтрак+", "Обед→l", "Ужин+", "Перекус→s2"]);
+    // перекус не последним в дне; с показом времени подпись уже отличается
+    const timed = [{ ...meal("s", "Перекус", "11:00"), label: "Перекус 11:00" }, meal("l", "Обед")];
+    expect(show(mealChips(timed, PLAN, ["s"]))).toEqual(["Завтрак+", "Обед→l", "Ужин+", "Перекус+", "Перекус 11:00=s"]);
+  });
+
+  it("chosenChip: начатый — кнопка, которая в него добавит; новый — кнопка названия", () => {
+    const day = [meal("s1", "Перекус"), meal("l", "Обед"), meal("c", "Кофе")];
+    const chips = mealChips(day, PLAN, ["s1"]);
+    expect(chosenChip(chips, { kind: "existing", mealId: "l" })).toBe("plan:обед");
+    expect(chosenChip(chips, { kind: "existing", mealId: "c" })).toBe("meal:c");
+    expect(chosenChip(chips, { kind: "existing", mealId: "s1" })).toBe("meal:s1");
+    expect(chosenChip(chips, { kind: "existing", mealId: "gone" })).toBeNull();
+    expect(chosenChip(chips, { kind: "new", name: " перекус ", time: null })).toBe("plan:перекус");
+    expect(chosenChip(chips, { kind: "new", name: "Полдник", time: null })).toBeNull();
+    expect(chosenChip(chips, { kind: "new", name: "  ", time: null })).toBeNull();
+  });
+
+  it("chipChoice: в приём дня или новый; перекус не последним — ещё один в конце дня", () => {
+    const day = [meal("b", "Завтрак"), meal("s1", "Перекус"), meal("l", "Обед")];
+    const [breakfast, , dinner, snack] = mealChips(day, PLAN);
+    expect(chipChoice(breakfast, day)).toEqual({ kind: "existing", mealId: "b", name: "Завтрак" });
+    expect(chipChoice(dinner, day, "19:05")).toEqual({ kind: "new", name: "Ужин", time: "19:05", again: false });
+    expect(mealChoiceBody(chipChoice(dinner, day))).toEqual({ mealName: "Ужин" });
+    const newSnack = chipChoice(snack, day);
+    expect(newSnack).toEqual({ kind: "new", name: "Перекус", time: null, again: true });
+    expect(mealChoiceBody(newSnack)).toEqual({ mealName: "Перекус", newMeal: true });
+    const coffee = mealChips([meal("c", "Кофе")], PLAN).at(-1)!;
+    expect(chipChoice(coffee, [])).toEqual({ kind: "existing", mealId: "c", name: "Кофе" });
   });
 });
 

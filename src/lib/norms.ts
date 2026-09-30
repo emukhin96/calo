@@ -21,9 +21,17 @@ export function normsFromState(state: UserState, now = new Date()): Norms | null
 
 /**
  * Состояние пользователя для страниц и /api/me: профиль, цель, вес, нормы и
- * настройки приёмов пищи (свой порядок приёмов, показ времени).
+ * настройки приёмов пищи: mealPlan — приёмы, которые предлагаются при
+ * добавлении еды (по порядку, без скрытых), mealItems — весь свой список с
+ * признаком «скрыт» (Профиль), showMealTimes — показ времени.
  */
 export async function loadUser(ownerId: string) {
   const state = await getUserState(db, ownerId);
-  return { state, norms: normsFromState(state), mealPlan: state.mealPlan, showMealTimes: state.showMealTimes };
+  return {
+    state,
+    norms: normsFromState(state),
+    mealPlan: state.mealPlan,
+    mealItems: state.mealItems,
+    showMealTimes: state.showMealTimes,
+  };
 }

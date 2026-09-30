@@ -23,7 +23,7 @@ import {
 } from "./entries";
 import { upsertFood } from "./foods";
 import { listDayMeals } from "./meals";
-import { saveProfile } from "./profile";
+import { saveMealSettings, saveProfile } from "./profile";
 import { dayMeals, foods, profiles, user } from "./schema";
 
 let db: DB;
@@ -141,14 +141,14 @@ describe("приёмы пищи дня", () => {
     expect(d.meals[0].entries.map((e) => e.id)).toEqual([a.id, b.id]);
   });
 
-  it("новый приём встаёт по списку пользователя, а не в конец", async () => {
+  it("новый приём встаёт по списку пользователя, а не в конец (перекус и свои названия — в конец)", async () => {
     const D = "2026-09-02";
     await add(D, { mealName: "Ужин" });
     await add(D, { mealName: "Завтрак" });
     await add(D, { mealName: "Обед" });
     await add(D, { mealName: "Кофе с коллегами" });
     await add(D, { mealName: "Перекус" });
-    expect(await names(D)).toEqual(["Завтрак", "Обед", "Перекус", "Ужин", "Кофе с коллегами"]);
+    expect(await names(D)).toEqual(["Завтрак", "Обед", "Ужин", "Кофе с коллегами", "Перекус"]);
   });
 
   it("newMeal — отдельный приём с тем же названием", async () => {
@@ -222,11 +222,11 @@ describe("приёмы пищи дня", () => {
     const more = await add(D, {}, at(D, "13:40"));
     expect(more.mealId).toBe(lunch.mealId);
     const later = await add(D, {}, at(D, "17:30"));
-    expect(later.mealName).toBe("Перекус");
+    expect(later.mealName).toBe("Ужин"); // следующий по списку: завтрак, обед, ужин, перекус
     // виджет присылает только время с телефона: день и «сейчас» — по нему
     const widget = await createEntry(db, ME, { foodId: tvorogId, grams: 10, eatenAt: at(D, "17:45") }, ctx(at(D, "18:00")));
     expect(widget.mealId).toBe(later.mealId);
-    expect(await names(D)).toEqual(["Обед", "Перекус"]);
+    expect(await names(D)).toEqual(["Обед", "Ужин"]);
   });
 
   it("свой список приёмов из профиля задаёт порядок", async () => {
@@ -307,7 +307,7 @@ describe("перенос записи в другой приём", () => {
     expect(same.mealId).toBe(snack.mealId);
     expect(await names(D2)).toEqual(["Завтрак", "Перекус", "Ужин"]);
     // в приёме есть другие записи — отдельный новый «Перекус»
-    const other = await put("Перекус");
+    const other = await createEntry(db, ME, { foodId: tvorogId, grams: 10, mealId: snack.mealId }, ctx());
     expect(other.mealId).toBe(snack.mealId);
     const split = await updateEntry(db, ME, other.id, { mealName: "Перекус", newMeal: true }, ctx());
     expect(split.mealId).not.toBe(snack.mealId);
@@ -489,8 +489,9 @@ describe("миграция 0005: приёмы дня из вида старых 
       const { rows: prof } = await client.query<{ meal_plan: string[]; show_meal_times: boolean }>(
         `select meal_plan, show_meal_times from profiles order by owner_id`,
       );
+      // список по умолчанию после всех миграций — в порядке 0006
       expect(prof).toEqual(
-        Array(3).fill({ meal_plan: ["Завтрак", "Обед", "Перекус", "Ужин"], show_meal_times: false }),
+        Array(3).fill({ meal_plan: ["Завтрак", "Обед", "Ужин", "Перекус"], show_meal_times: false }),
       );
       await expect(
         client.query(`insert into entries (owner_id, eaten_at, meal, input_method, title, grams, nutrients) values ('u', now(), 'snack', 'product', 'x', 1, '{}')`),
@@ -510,5 +511,58 @@ describe("миграция 0005: приёмы дня из вида старых 
       .returning();
     expect(m).toMatchObject({ date: "2026-01-01", name: "Тест", position: 1 });
     await db.delete(dayMeals).where(eq(dayMeals.id, m.id));
+  });
+});
+
+describe("перекус в любое время дня и скрытые приёмы", () => {
+  const add = (date: string, body: Record<string, unknown> = {}, owner = ME, now = new Date("2026-10-15T09:00:00Z")) =>
+    createEntry(db, owner, { foodId: tvorogId, grams: 100, date, ...body }, ctx(now));
+
+  it("новый «Перекус» — в конец дня; по названию — к перекусу, только если он последний", async () => {
+    const D = "2026-09-20";
+    const breakfast = await add(D, { mealName: "Завтрак" });
+    const s1 = await add(D, { mealName: "Перекус" });
+    await add(D, { mealName: "Обед" });
+    expect(await names(D)).toEqual(["Завтрак", "Перекус", "Обед"]);
+    // перекус после обеда — новый, в конце, а не в утренний
+    const s2 = await add(D, { mealName: "перекус" });
+    expect(s2.mealId).not.toBe(s1.mealId);
+    expect(await names(D)).toEqual(["Завтрак", "Перекус", "Обед", "Перекус"]);
+    // последний в дне перекус — тот же приём
+    expect((await add(D, { mealName: "Перекус" })).mealId).toBe(s2.mealId);
+    // старая офлайн-очередь с видом «snack» — так же
+    expect((await add(D, { meal: "snack", eatenAt: at(D, "16:00") })).mealId).toBe(s2.mealId);
+    // ужин — по списку: перекусы места в нём не занимают
+    await add(D, { mealName: "Ужин" });
+    expect(await names(D)).toEqual(["Завтрак", "Перекус", "Обед", "Перекус", "Ужин"]);
+    // перенос записи в «Перекус» по названию: последний приём — ужин → новый перекус в конце
+    const moved = await updateEntry(db, ME, breakfast.id, { mealName: "Перекус" }, ctx());
+    expect([s1.mealId, s2.mealId]).not.toContain(moved.mealId);
+    expect(await names(D)).toEqual(["Перекус", "Обед", "Перекус", "Ужин", "Перекус"]);
+  });
+
+  it("скрытые приёмы задают порядок дня, но по умолчанию не предлагаются", async () => {
+    const HID = "hid";
+    await db.insert(user).values({ id: HID, name: "Hid", email: "hid@calo.test" });
+    await saveProfile(db, HID, { sex: "female", birthYear: 1990, heightCm: 165, activity: "light", timezone: TZ });
+    await saveMealSettings(db, HID, {
+      items: [
+        { name: "Завтрак", hidden: false },
+        { name: "Второй завтрак", hidden: true },
+        { name: "Обед", hidden: false },
+        { name: "Ужин", hidden: false },
+        { name: "Перекус", hidden: false },
+      ],
+    });
+    const D = "2026-09-21";
+    await add(D, { mealName: "Завтрак" }, HID);
+    await add(D, { mealName: "Обед" }, HID);
+    // скрытый, но выбранный явно — на своё место по всему списку
+    await add(D, { mealName: "второй завтрак" }, HID);
+    expect(await names(D, HID)).toEqual(["Завтрак", "Второй завтрак", "Обед"]);
+    // без приёма: после завтрака — обед (скрытый второй завтрак не предлагается)
+    const D2 = "2026-09-22";
+    await add(D2, { mealName: "Завтрак" }, HID);
+    expect((await add(D2, {}, HID)).mealName).toBe("Обед");
   });
 });
