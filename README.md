@@ -7,6 +7,7 @@ PWA на Next.js — работает в браузере и на iPhone («На
 - Архитектура — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - План по этапам — [docs/PLAN.md](docs/PLAN.md)
 - Сервер и деплой — [deploy/VPS.md](deploy/VPS.md)
+- Рутинные операции (деплой, откат, логи, секреты, бэкапы, iOS) — [docs/OPERATIONS.md](docs/OPERATIONS.md)
 
 ## Локально
 
@@ -48,4 +49,5 @@ Next ходит в базу обычным драйвером `pg`, как в п
 ## Деплой
 
 Push в `main` → GitHub Actions: проверки → сборка образа → `docker load` на
-сервер → `deploy/vps/deploy.sh`. Подробности и ручные операции — [deploy/VPS.md](deploy/VPS.md).
+сервер → `deploy/vps/deploy.sh`. Ручные операции — [docs/OPERATIONS.md](docs/OPERATIONS.md),
+устройство сервера — [deploy/VPS.md](deploy/VPS.md).
