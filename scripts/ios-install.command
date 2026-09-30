@@ -22,7 +22,7 @@ rm -f "$J"
 pnpm ios >/dev/null || fail "Не удалось подготовить проект (pnpm ios)."
 echo "Собираю… (пара минут)"; rm -rf "$APP"
 (cd ios/App && xcodebuild -project App.xcodeproj -scheme App -configuration Debug \
-  -destination "id=$DEVICE" -allowProvisioningUpdates -derivedDataPath "$DD" build 2>&1 |
+  -destination "generic/platform=iOS" -allowProvisioningUpdates -derivedDataPath "$DD" build 2>&1 |
   grep -E "error:|BUILD" | sort -u)
 [ -d "$APP" ] || fail "Сборка не удалась — пришлите Claude текст выше."
 

@@ -64,11 +64,16 @@ enum CaloShared {
         guard let req = request("/api/summary/day") else { return summary }
         do {
             let (data, res) = try await URLSession.shared.data(for: req)
-            guard (res as? HTTPURLResponse)?.statusCode == 200 else { return summary }
+            let status = (res as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200 else {
+                note("summary HTTP \(status)")
+                return summary
+            }
             let fresh = try JSONDecoder().decode(Summary.self, from: data)
             save(fresh, key: "summary")
             return fresh
         } catch {
+            note("summary: \(error.localizedDescription)")
             return summary
         }
     }
@@ -80,8 +85,28 @@ enum CaloShared {
             "grams": dish.grams,
             "eatenAt": ISO8601DateFormatter().string(from: Date()),
         ]
-        guard let req = request("/api/entries", method: "POST", body: body) else { return false }
-        guard let (_, res) = try? await URLSession.shared.data(for: req) else { return false }
-        return (res as? HTTPURLResponse)?.statusCode == 201
+        guard let req = request("/api/entries", method: "POST", body: body) else {
+            note("нет config")
+            return false
+        }
+        do {
+            let (_, res) = try await URLSession.shared.data(for: req)
+            let status = (res as? HTTPURLResponse)?.statusCode ?? 0
+            note("HTTP \(status)")
+            return status == 201
+        } catch {
+            note("сеть: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Итог последнего нажатия «+» — для отладки (читается с Mac через devicectl).
+    /// Пишется файлом, а не в UserDefaults: процесс виджета живёт секунды и не успевает их сбросить.
+    static func note(_ text: String) {
+        guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) else { return }
+        let url = dir.appendingPathComponent("widget-log.txt")
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(text)\n"
+        let old = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        try? (String(old.suffix(4000)) + line).write(to: url, atomically: true, encoding: .utf8)
     }
 }
