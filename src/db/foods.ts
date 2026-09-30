@@ -32,6 +32,18 @@ const resultColumns = {
   portionLabel: foods.portionLabel,
 };
 
+type ResultRow = Omit<FoodResult, "own"> & { ownerId: string | null };
+
+/**
+ * Строка → FoodResult. У своего продукта со штрихкодом source_ref хранит
+ * «владелец:код» (см. ownBarcodeRef) — наружу отдаём только код, как у OFF.
+ */
+function toResult({ ownerId, ...r }: ResultRow): FoodResult {
+  const prefix = ownerId ? `${ownerId}:` : null;
+  const sourceRef = prefix && r.sourceRef?.startsWith(prefix) ? r.sourceRef.slice(prefix.length) : r.sourceRef;
+  return { ...r, sourceRef, own: ownerId != null };
+}
+
 /** Слово запроса «похоже» на текст продукта: подстрока или триграммное сходство слова. */
 const WORD_SIMILARITY = 0.55;
 
@@ -77,7 +89,7 @@ export async function searchFoods(db: DB, ownerId: string, query: string, limit 
     )
     .limit(limit);
 
-  return rows.map(({ ownerId: owner, ...r }) => ({ ...r, own: owner != null }));
+  return rows.map(toResult);
 }
 
 export type FoodUpsert = {
@@ -137,8 +149,7 @@ export async function upsertFood(db: DB, item: FoodUpsert): Promise<FoodResult> 
     .select(resultColumns)
     .from(foods)
     .where(and(eq(foods.source, item.source), eq(foods.sourceRef, item.sourceRef)));
-  const { ownerId, ...r } = row;
-  return { ...r, own: ownerId != null };
+  return toResult(row);
 }
 
 /** Продукт по id: общий или свой. */
@@ -147,9 +158,7 @@ export async function getFood(db: DB, ownerId: string, id: string): Promise<Food
     .select(resultColumns)
     .from(foods)
     .where(and(eq(foods.id, id), or(isNull(foods.ownerId), eq(foods.ownerId, ownerId))));
-  if (!row) return null;
-  const { ownerId: owner, ...r } = row;
-  return { ...r, own: owner != null };
+  return row ? toResult(row) : null;
 }
 
 export async function getFoods(db: DB, ownerId: string, ids: string[]): Promise<FoodResult[]> {
@@ -158,5 +167,70 @@ export async function getFoods(db: DB, ownerId: string, ids: string[]): Promise<
     .select(resultColumns)
     .from(foods)
     .where(and(inArray(foods.id, ids), or(isNull(foods.ownerId), eq(foods.ownerId, ownerId))));
-  return rows.map(({ ownerId: owner, ...r }) => ({ ...r, own: owner != null }));
+  return rows.map(toResult);
+}
+
+/**
+ * source_ref своего продукта со штрихкодом. Уникальный индекс (source, source_ref)
+ * общий на всех: у двух людей один и тот же йогурт не должен сталкиваться,
+ * поэтому в ссылку входит владелец.
+ */
+export const ownBarcodeRef = (ownerId: string, code: string) => `${ownerId}:${code}`;
+
+export type OwnFoodCreate = {
+  nameRu: string;
+  brand?: string | null;
+  barcode?: string | null;
+  nutrientsPer100g: NutrientVector;
+  defaultPortionG?: number | null;
+};
+
+/**
+ * Свой продукт «КБЖУ с упаковки» (source = manual). Со штрихкодом повторное
+ * сохранение того же кода обновляет продукт, а не плодит копии; без штрихкода —
+ * всегда новый продукт. Ищется поиском, как и справочник (search_text).
+ */
+export async function createOwnFood(db: DB, ownerId: string, input: OwnFoodCreate): Promise<FoodResult> {
+  const nameRu = input.nameRu.trim();
+  const brand = input.brand?.trim() || null;
+  const portion = input.defaultPortionG ?? null;
+  const fields = {
+    nameRu,
+    brand,
+    nutrientsPer100g: input.nutrientsPer100g,
+    defaultPortionG: portion,
+    portionLabel: portion ? `порция ${String(Math.round(portion * 10) / 10).replace(".", ",")} г` : null,
+    searchText: buildSearchText({ nameRu, brand }),
+  };
+  const row = {
+    ...fields,
+    ownerId,
+    source: "manual" as const,
+    sourceRef: input.barcode ? ownBarcodeRef(ownerId, input.barcode) : null,
+    nameEn: null,
+    aliases: [],
+  };
+  const [saved] = row.sourceRef
+    ? await db
+        .insert(foods)
+        .values(row)
+        .onConflictDoUpdate({
+          target: [foods.source, foods.sourceRef],
+          set: fields,
+          // Ссылка и так содержит владельца; условие — страховка от чужой строки.
+          setWhere: eq(foods.ownerId, ownerId),
+        })
+        .returning(resultColumns)
+    : await db.insert(foods).values(row).returning(resultColumns);
+  if (!saved) throw new Error("own food conflict");
+  return toResult(saved);
+}
+
+/** Свой продукт владельца с этим штрихкодом; чужие не видны. */
+export async function findOwnFoodByBarcode(db: DB, ownerId: string, code: string): Promise<FoodResult | null> {
+  const [row] = await db
+    .select(resultColumns)
+    .from(foods)
+    .where(and(eq(foods.ownerId, ownerId), eq(foods.source, "manual"), eq(foods.sourceRef, ownBarcodeRef(ownerId, code))));
+  return row ? toResult(row) : null;
 }
