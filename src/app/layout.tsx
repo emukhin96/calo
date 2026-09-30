@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { NativeBridge } from "@/ui/NativeBridge";
 import { OfflineSync } from "@/ui/OfflineSync";
+import { OverscrollGuard } from "@/ui/OverscrollGuard";
 import { ServiceWorker } from "@/ui/ServiceWorker";
 // Шрифты лежат в node_modules (Fontsource), сборка не ходит в Google Fonts.
 // Файлы разбиты по unicode-range: браузер качает только кириллицу и латиницу.
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="min-h-dvh">
         {children}
         <OfflineSync />
+        <OverscrollGuard />
         <NativeBridge />
         <ServiceWorker />
       </body>

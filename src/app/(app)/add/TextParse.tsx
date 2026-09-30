@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import type { ParsedItem } from "@/ai/match";
 import type { ParseTextResponse } from "@/app/api/parse/text/route";
 import type { FoodResult } from "@/db/foods";
@@ -12,17 +12,29 @@ import {
   defaultMealChoice,
   isMealChoiceValid,
   type MealChoice,
+  mealChoiceBody,
   newMealChoice,
   newMealTime,
 } from "@/lib/meal-choice";
 import { notifyChanged } from "@/lib/native";
 import { postEntry } from "@/lib/offline";
 import { Button, Eyebrow } from "@/ui/components";
+import { Segmented } from "@/ui/form";
 import { formatInt, plural } from "@/ui/format";
 import { formatGrams } from "@/ui/grams";
 import { MealPicker } from "@/ui/MealPicker";
 import { PickFoodSheet } from "@/ui/PickFoodSheet";
-import { type FirstMeal, type PreferredMeal, rowMealBody, TEXT_MAX } from "./add-flow";
+import {
+  defaultDishName,
+  DISH_MAX_INGREDIENTS,
+  DISH_NAME_MAX,
+  ENTRY_MAX_GRAMS,
+  type FirstMeal,
+  type PreferredMeal,
+  rowMealBody,
+  TEXT_MAX,
+} from "./add-flow";
+import { useUnsavedWork } from "./CancelLink";
 import { RowGramsSheet } from "./RowGramsSheet";
 
 /**
@@ -34,9 +46,18 @@ type Row = Omit<ParsedItem, "grams"> & { key: string; foodId: string | null; gra
 /** Выбранный приём для всех позиций; touched — выбрали сами, повторный разбор его не сбрасывает. */
 type MealState = { choice: MealChoice; newTime: string | undefined; touched: boolean };
 
-/** Столько же принимает POST /api/entries. */
-const MAX_GRAMS = 5000;
-const okGrams = (g: number | null): g is number => g != null && g > 0 && g <= MAX_GRAMS;
+/** Как добавить: каждую позицию отдельной записью или всё одним блюдом (оно сохранится в «Блюда»). */
+type SaveMode = "items" | "dish";
+
+const MODES: { value: SaveMode; label: string }[] = [
+  { value: "items", label: "Отдельно" },
+  { value: "dish", label: "Одним блюдом" },
+];
+
+/** Тело POST /api/recipes для «Одним блюдом» (lib/recipe-schema.ts CompositeBody): вес готового — сумма ингредиентов, одна порция. */
+type DishBody = { kind: "composite"; name: string; ingredients: { foodId: string; grams: number }[]; totalWeightG: null; portions: 1 };
+
+const okGrams = (g: number | null): g is number => g != null && g > 0 && g <= ENTRY_MAX_GRAMS;
 const round1 = (g: number) => Math.round(g * 10) / 10;
 
 const EXAMPLES = ["паста: 100 г сухой пасты, 50 г сливок 20%, 30 г пармезана", "тарелка борща и два куска ржаного хлеба", "кефир 250, яйцо 2 шт"];
@@ -49,14 +70,16 @@ const piecesGrams = (r: Row, f: FoodResult | null) => (r.pieces && f ? amountToG
 /**
  * Вкладка «Текст»: свободное описание → /api/parse/text → экран подтверждения
  * (позиции, граммы, выбор из топ-3 продуктов или любого через лист поиска,
- * приём пищи) → записи в дневник. Нутриенты берутся из выбранного продукта
- * справочника, ИИ их не оценивает. initialText — из строки ввода дневника
- * (/add?text=…): разбор начинается сам, один раз.
+ * приём пищи) → записи в дневник: каждая позиция отдельно или всё одним блюдом
+ * (составное блюдо в «Блюда» + одна запись). Нутриенты берутся из выбранного
+ * продукта справочника, ИИ их не оценивает. initialText — из строки ввода
+ * дневника (/add?text=…): разбор начинается сам, один раз.
  */
 export function TextParse({
   date,
   meals,
   plan,
+  order,
   showTimes,
   isToday,
   preferred,
@@ -65,8 +88,10 @@ export function TextParse({
   date: string;
   /** Приёмы дня по порядку. */
   meals: DayMeal[];
-  /** Свой список приёмов из Профиля. */
+  /** Свой список приёмов из Профиля — что предлагать (без скрытых). */
   plan: string[];
+  /** Весь свой список со скрытыми — по нему подсказка, куда встанет новый приём. */
+  order?: string[];
   /** Показ времени приёмов включён в Профиле. */
   showTimes: boolean;
   isToday: boolean;
@@ -85,6 +110,20 @@ export function TextParse({
   const [meal, setMeal] = useState<MealState | null>(null);
   const [busy, setBusy] = useState<"parse" | "save" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<SaveMode>("items");
+  /** Название блюда; null — не меняли: подставляется по тексту и позициям. */
+  const [dishName, setDishName] = useState<string | null>(null);
+  /**
+   * Блюдо уже создано, а запись в дневник не добавилась: повтор не заводит второе
+   * такое же. body — с чем создано; поменяли позиции или название — блюдо обновится.
+   */
+  const createdDish = useRef<{ id: string; body: string } | null>(null);
+
+  // Разобранное ещё не в дневнике — «Отмена» в шапке спросит, прежде чем уйти.
+  // Пока сохраняем (и после успеха, до перехода в дневник) — не спрашивает: записи уже уходят.
+  useUnsavedWork(rows != null && busy !== "save");
+  const modeLabelId = useId();
+  const dishHintId = useId();
 
   async function parse(input: string) {
     setBusy("parse");
@@ -96,7 +135,7 @@ export function TextParse({
         body: JSON.stringify({ text: input }),
       }).catch(() => null);
       if (!res) {
-        setError("Нет сети — разбор текста недоступен. Добавьте продукты из недавних или «Моих блюд».");
+        setError("Нет сети — разбор текста недоступен. Добавьте продукт из недавних или блюдо со вкладки «Блюда».");
         return;
       }
       const data = (await res.json().catch(() => ({}))) as Partial<ParseTextResponse> & { error?: string };
@@ -180,7 +219,33 @@ export function TextParse({
   const unmatched = rows?.filter((r) => !r.skip && !food(r)) ?? [];
   const noGrams = rows?.filter((r) => !r.skip && food(r) && !okGrams(r.grams)) ?? [];
   const totals = sum(ready.map((r) => scale(food(r)!.nutrientsPer100g, r.grams!)));
-  const canSave = busy == null && ready.length > 0 && meal != null && isMealChoiceValid(meal.choice);
+  // «Одним блюдом»: вес записи — всё блюдо; название по умолчанию — из текста до двоеточия или первых позиций.
+  const dishGrams = round1(ready.reduce((g, r) => g + r.grams!, 0));
+  const dish = (dishName ?? defaultDishName(text, (ready.length ? ready : (rows ?? [])).map((r) => r.name))).trim();
+  const dishProblem =
+    dishGrams > ENTRY_MAX_GRAMS
+      ? `Блюдо тяжелее ${formatInt(ENTRY_MAX_GRAMS / 1000)} кг одной записью не добавить — добавьте продукты отдельно.`
+      : ready.length > DISH_MAX_INGREDIENTS
+        ? `В блюде может быть до ${DISH_MAX_INGREDIENTS} продуктов — добавьте отдельно.`
+        : null;
+  const canSave =
+    busy == null &&
+    ready.length > 0 &&
+    meal != null &&
+    isMealChoiceValid(meal.choice) &&
+    (mode === "items" || (dish !== "" && dishProblem == null));
+
+  /** Записи ушли: назад в дневник этого дня. Офлайн-очередь — полной загрузкой из кэша service worker. */
+  function done(queued: boolean) {
+    if (queued) {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- офлайн: полная загрузка дня из кэша SW
+      window.location.assign(`/?d=${date}`);
+      return;
+    }
+    notifyChanged();
+    router.push(`/?d=${date}`);
+    router.refresh();
+  }
 
   async function save() {
     if (!canSave) return;
@@ -221,14 +286,54 @@ export function TextParse({
       setBusy(null);
       return;
     }
-    if (queued) {
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- офлайн: полная загрузка дня из кэша SW
-      window.location.assign(`/?d=${date}`);
+    done(queued);
+  }
+
+  /**
+   * «Одним блюдом»: составное блюдо из готовых позиций (POST /api/recipes) и одна
+   * запись с ним на весь вес. Блюдо заводится только с сетью: без неё — ошибка,
+   * позиции остаются, в очередь ничего не уходит (половина операции хуже никакой).
+   * Сама запись, как и любая, при обрыве сети ждёт в офлайн-очереди.
+   */
+  async function saveDish() {
+    if (!canSave || !meal) return;
+    setBusy("save");
+    setError(null);
+    const choice = meal.choice.kind === "new" ? newMealChoice(meals, meal.choice.name, meal.choice.time) : meal.choice;
+    const body: DishBody = {
+      kind: "composite",
+      name: dish,
+      ingredients: ready.map((r) => ({ foodId: food(r)!.id, grams: r.grams! })),
+      totalWeightG: null,
+      portions: 1,
+    };
+    const key = JSON.stringify(body);
+    const prev = createdDish.current;
+    let recipeId = prev?.body === key ? prev.id : null;
+    if (!recipeId) {
+      const saved = await saveRecipe(body, prev?.id);
+      if (saved === "offline" || saved === "error") {
+        setError(
+          saved === "offline"
+            ? "Нет сети — блюдо сохраняется только онлайн. Добавьте продукты отдельно (запишутся, когда появится сеть) или попробуйте позже."
+            : "Не получилось сохранить блюдо — попробуйте ещё раз.",
+        );
+        setBusy(null);
+        return;
+      }
+      recipeId = saved;
+      createdDish.current = { id: saved, body: key };
+    }
+    let sent: Awaited<ReturnType<typeof postEntry>>;
+    try {
+      sent = await postEntry({ recipeId, grams: dishGrams, date, ...mealChoiceBody(choice) }, dish);
+    } catch {
+      setError(`Блюдо «${dish}» сохранено в «Блюда», но в дневник не добавилось — попробуйте ещё раз.`);
+      setBusy(null);
       return;
     }
-    notifyChanged();
-    router.push(`/?d=${date}`);
-    router.refresh();
+    createdDish.current = null;
+    done(sent === "queued");
   }
 
   if (!rows) {
@@ -366,11 +471,49 @@ export function TextParse({
         </p>
       )}
 
+      <div className="mt-6">
+        {/* Заголовок — как «Приём пищи» ниже (MealPicker): два выбора одного вида. */}
+        <p id={modeLabelId} className="text-[15px] font-semibold text-ink">
+          Как добавить
+        </p>
+        <div className="mt-2" role="group" aria-labelledby={modeLabelId}>
+          <Segmented value={mode} options={MODES} onChange={setMode} />
+        </div>
+        {mode === "items" ? (
+          <p className="mt-2 text-[14px] leading-snug text-ink-3">Каждый продукт — отдельной записью в дневнике.</p>
+        ) : (
+          <>
+            <label className="mt-4 block">
+              <span className="text-[15px] font-semibold text-ink">Название блюда</span>
+              <input
+                value={dishName ?? dish}
+                maxLength={DISH_NAME_MAX}
+                aria-describedby={dishHintId}
+                aria-invalid={dish === "" || dishProblem != null}
+                onChange={(e) => setDishName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                enterKeyHint="done"
+                autoComplete="off"
+                placeholder="Паста со сливками"
+                className="mt-1.5 h-[52px] w-full rounded-[var(--radius-button)] border border-line bg-surface px-4 text-[17px] text-ink outline-none focus:border-accent"
+              />
+            </label>
+            <p id={dishHintId} className={`mt-2 text-[14px] leading-snug ${dish === "" || dishProblem ? "text-warn" : "text-ink-3"}`}>
+              {dish === ""
+                ? "Назовите блюдо — под этим названием оно появится в «Блюда»."
+                : (dishProblem ??
+                  `Одна запись в дневнике — ${formatGrams(dishGrams)} г. Блюдо сохранится в «Блюда»: в следующий раз его можно добавить в одно касание.`)}
+            </p>
+          </>
+        )}
+      </div>
+
       {meal && (
         <div className="mt-6">
           <MealPicker
             meals={meals}
             plan={plan}
+            order={order}
             showTimes={showTimes}
             value={meal.choice}
             onChange={(choice) => setMeal({ ...meal, choice, touched: true })}
@@ -387,8 +530,12 @@ export function TextParse({
           Б {fmt(totals.protein)} · Ж {fmt(totals.fat)} · У {fmt(totals.carbs)}
         </span>
       </p>
-      <Button className="mt-4" disabled={!canSave} onClick={save}>
-        {busy === "save" ? "Сохраняю…" : `Добавить ${ready.length} ${plural(ready.length, ["позицию", "позиции", "позиций"])}`}
+      <Button className="mt-4" disabled={!canSave} onClick={mode === "dish" ? saveDish : save}>
+        {busy === "save"
+          ? "Сохраняю…"
+          : mode === "dish"
+            ? `Добавить блюдо · ${formatInt(totals.kcal ?? 0)} ккал`
+            : `Добавить ${ready.length} ${plural(ready.length, ["позицию", "позиции", "позиций"])}`}
       </Button>
 
       {picking && (
@@ -417,6 +564,22 @@ export function TextParse({
       )}
     </div>
   );
+}
+
+/**
+ * Сохранить блюдо: новое — POST /api/recipes; уже созданное при прошлой попытке
+ * (id) — PUT /api/recipes/:id, чтобы не плодить копии (удалили — заводим заново).
+ * Возвращает id блюда, "offline" — нет сети, "error" — сервер отказал.
+ */
+async function saveRecipe(body: DishBody, id?: string): Promise<string | "offline" | "error"> {
+  const send = (url: string, method: "POST" | "PUT") =>
+    fetch(url, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+  let res = id ? await send(`/api/recipes/${id}`, "PUT") : null;
+  if (!id || res?.status === 404) res = await send("/api/recipes", "POST");
+  if (!res) return "offline";
+  if (!res.ok) return "error";
+  const recipe = (await res.json().catch(() => null)) as { id?: unknown } | null;
+  return typeof recipe?.id === "string" ? recipe.id : "error";
 }
 
 /** Быстрая кнопка листа граммов: «2 шт (110 г)» для штук, иначе порция продукта. */

@@ -6,14 +6,14 @@ import { Eyebrow } from "@/ui/components";
 import { formatInt } from "@/ui/format";
 import { countOf } from "@/domain/text";
 
-/** «Мои блюда»: рецепты из ингредиентов и шаблоны со своим КБЖУ. */
+/** «Блюда»: рецепты из ингредиентов и шаблоны со своим КБЖУ. */
 export default async function RecipesPage() {
   const session = await requireSession();
   const items = await listRecipes(db, session.user.id);
   return (
     <main className="mx-auto max-w-xl px-6 pt-6 pb-tabbar">
-      <Eyebrow>{items.length > 0 ? countOf(items.length, ["блюдо", "блюда", "блюд"]) : "Блюда"}</Eyebrow>
-      <h1 className="mt-2 font-display text-[28px] font-extrabold">Мои блюда</h1>
+      <Eyebrow>{items.length > 0 ? countOf(items.length, ["блюдо", "блюда", "блюд"]) : "Рецепты и своё КБЖУ"}</Eyebrow>
+      <h1 className="mt-2 font-display text-[28px] font-extrabold">Блюда</h1>
 
       {/* Две карточки в ряд, если помещаются; на узком экране (320px) — друг под другом */}
       <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))] gap-3">
@@ -29,8 +29,8 @@ export default async function RecipesPage() {
 
       {items.length === 0 ? (
         <p className="mt-8 text-[15px] leading-relaxed text-ink-2">
-          Пока пусто. Блюдо можно собрать из ингредиентов, задать своё КБЖУ или сохранить любую запись дневника — кнопка
-          «Сохранить как блюдо» в записи.
+          Пока пусто. Блюдо можно собрать из ингредиентов, задать своё КБЖУ, сохранить любую запись дневника — кнопка
+          «Сохранить как блюдо» в записи — или описать текстом на экране «Добавить» и выбрать «Одним блюдом».
         </p>
       ) : (
         <ul className="mt-6 divide-y divide-line">
@@ -43,7 +43,7 @@ export default async function RecipesPage() {
                     <span className="block text-[16px] font-semibold text-ink">{r.name}</span>
                     <span className="text-[13px] text-ink-3">
                       {r.kind === "composite" ? "из ингредиентов" : "своё КБЖУ"}
-                      {r.useCount > 0 && ` · ели ${r.useCount} раз`}
+                      {r.useCount > 0 && ` · ели ${countOf(r.useCount, ["раз", "раза", "раз"])}`}
                     </span>
                   </span>
                   <span className="tabular shrink-0 text-right text-[14px] text-ink-2">

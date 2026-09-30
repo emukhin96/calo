@@ -8,7 +8,7 @@ import { RecipeBody } from "@/lib/recipe-schema";
 import { userTimeZone } from "@/lib/tz";
 
 /**
- * GET /api/recipes?meal=breakfast | ?mealName=Перекус — мои блюда, вероятные
+ * GET /api/recipes?meal=breakfast | ?mealName=Перекус — «Блюда», вероятные
  * для этого приёма пищи сверху. Своё название приёма — вид по текущему часу.
  */
 export async function GET(req: Request) {
