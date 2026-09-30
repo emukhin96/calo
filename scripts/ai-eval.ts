@@ -44,7 +44,7 @@ async function main() {
     const unexpected = items.filter((_, i) => !used.has(i));
     extra += unexpected.length;
     if (unexpected.length) lines.push(`    лишнее: ${unexpected.map((u) => `${u.name} ${u.grams} г`).join(", ")}`);
-    console.log(`${lines.length ? "•" : "✓"} ${p.text} → ${items.map((i) => `${i.name}${i.brand ? ` (${i.brand})` : ""} ${i.grams} г`).join("; ") || "—"}`);
+    console.log(`${lines.length ? "•" : "✓"} ${p.text} → ${items.map((i) => `${i.name}${i.brand ? ` (${i.brand})` : ""}${i.nameEn ? ` [${i.nameEn}]` : ""} ${i.grams} г`).join("; ") || "—"}`);
     for (const l of lines) console.log(l);
   }
   console.log(`\nФраз: ${PHRASES.length}, ошибок вызова: ${failures}, время: ${Math.round((Date.now() - t0) / 1000)} с`);

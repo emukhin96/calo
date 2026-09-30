@@ -2,7 +2,7 @@
 // гоняют их на PGlite в памяти (src/db/foods.test.ts).
 import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { NutrientVector } from "@/domain/nutrients";
-import { buildSearchText, queryTokens, stem } from "@/domain/search";
+import { buildSearchText, type FoodState, type MatchKind, matchFood, parseQuery, stem, tokenPattern } from "@/domain/search";
 import type { DB } from ".";
 import { entries, foods } from "./schema";
 
@@ -47,16 +47,40 @@ function toResult({ ownerId, ...r }: ResultRow): FoodResult {
 /** Слово запроса «похоже» на текст продукта: подстрока или триграммное сходство слова. */
 const WORD_SIMILARITY = 0.55;
 
+/** Сколько кандидатов SQL отдаёт на точное ранжирование (matchFood). */
+const POOL = 150;
+
+/** Результат поиска: продукт + насколько он совпал с запросом (см. MatchKind). */
+export type FoodHit = FoodResult & { match: MatchKind };
+
+export type SearchHints = {
+  /** Вид от ИИ («100 г сухой пасты» → raw): совпавший вид выше, противоположный ниже. */
+  state?: FoodState | "unknown" | null;
+};
+
 /**
  * Поиск продуктов: общий справочник + личные продукты владельца.
  * Каждое слово запроса должно найтись (подстрокой или по сходству — опечатки,
- * падежи: «пармезана» → «пармезан»). Сортировка: свои продукты; то, что
- * пользователь уже записывал в дневник; совпадение с началом названия;
- * суммарное сходство; полнота данных (сколько нутриентов известно);
- * короткие названия выше.
+ * падежи: «пармезана» → «пармезан»). Порядок:
+ * 1) сколько слов нашлось целым словом в любой форме — «паста» (синоним макарон)
+ *    выше «паст|ернака», «сыр» выше «сыр|ка»;
+ * 2) свои продукты; 3) вид не противоречит подсказке (сухие / варёные);
+ * 4) то, что пользователь уже записывал в дневник;
+ * 5) название или синоним ровно равен запросу; 6) название начинается с первого
+ *    слова целиком; 7) вид совпал с подсказкой; 8) название начинается хотя бы с
+ *    основы первого слова; 9) суммарное сходство; полнота данных (сколько
+ *    нутриентов известно); короткие названия выше.
+ * SQL отбирает POOL кандидатов грубо (целые слова — регуляркой), точный порядок — в JS.
  */
-export async function searchFoods(db: DB, ownerId: string, query: string, limit = 30): Promise<FoodResult[]> {
-  const tokens = queryTokens(query);
+export async function searchFoods(
+  db: DB,
+  ownerId: string,
+  query: string,
+  limit = 30,
+  hints: SearchHints = {},
+): Promise<FoodHit[]> {
+  const q = parseQuery(query, hints.state);
+  const { tokens } = q;
   if (tokens.length === 0) return [];
 
   // Подстрокой ищем по основе слова (падежи: «сырой» ~ «сырые»), сходством — по слову целиком (опечатки).
@@ -71,15 +95,35 @@ export async function searchFoods(db: DB, ownerId: string, query: string, limit 
     ),
     sql` + `,
   );
+  const whole = sql.join(
+    tokens.map((t) => sql`(${foods.searchText} ~ ${`(^| )${tokenPattern(t)}( |$)`})::int`),
+    sql` + `,
+  );
   const startsWith = sql`(${foods.searchText} like ${stem(tokens[0]) + "%"})`;
-  const eaten = sql`least((select count(*) from ${entries} where ${entries.ownerId} = ${ownerId} and ${entries.foodId} = ${foods.id}), 5)`;
-  const completeness = sql`(select count(*) from jsonb_each(${foods.nutrientsPer100g}) where value <> 'null'::jsonb)`;
+  // Сколько раз ел (до 5) — одним проходом по записям владельца, а не подзапросом на каждую строку.
+  const eatenBy = db
+    .select({ foodId: entries.foodId, n: sql<number>`least(count(*), 5)::int`.as("n") })
+    .from(entries)
+    .where(eq(entries.ownerId, ownerId))
+    .groupBy(entries.foodId)
+    .as("eaten_by");
+  const eaten = sql<number>`coalesce(${eatenBy.n}, 0)`;
+  const completeness = sql<number>`(select count(*) from jsonb_each(${foods.nutrientsPer100g}) where value <> 'null'::jsonb)::int`;
 
   const rows = await db
-    .select(resultColumns)
+    .select({
+      food: resultColumns,
+      aliases: foods.aliases,
+      nameEn: foods.nameEn,
+      eaten,
+      completeness,
+      score: sql<number>`(${score})::float8`,
+    })
     .from(foods)
+    .leftJoin(eatenBy, eq(eatenBy.foodId, foods.id))
     .where(and(or(isNull(foods.ownerId), eq(foods.ownerId, ownerId)), ...perToken))
     .orderBy(
+      sql`(${whole}) desc`,
       sql`(${foods.ownerId} is not null) desc`,
       sql`${eaten} desc`,
       sql`${startsWith} desc`,
@@ -87,9 +131,30 @@ export async function searchFoods(db: DB, ownerId: string, query: string, limit 
       sql`${completeness} desc`,
       sql`length(${foods.nameRu})`,
     )
-    .limit(limit);
+    .limit(Math.max(POOL, limit));
 
-  return rows.map(toResult);
+  const flag = (x: boolean) => (x ? 1 : 0);
+  return rows
+    .map((r) => ({ ...r, m: matchFood(q, { ...r.food, aliases: r.aliases, nameEn: r.nameEn }) }))
+    .sort(
+      (a, b) =>
+        b.m.whole - a.m.whole ||
+        flag(b.food.ownerId != null) - flag(a.food.ownerId != null) ||
+        // Противоположный вид — вниз, даже если его ели («сухой пасты» — не варёные макароны).
+        flag(b.m.state >= 0) - flag(a.m.state >= 0) ||
+        b.eaten - a.eaten ||
+        flag(b.m.kind === "exact") - flag(a.m.kind === "exact") ||
+        flag(b.m.nameStart) - flag(a.m.nameStart) ||
+        // Совпавший вид выбирает среди вариантов того же продукта, а не подменяет продукт:
+        // «сосиски» (cooked) — сосиски, а не «Колбаса говяжья, жареная» с синонимом «сосиски».
+        b.m.state - a.m.state ||
+        flag(b.m.prefixStart) - flag(a.m.prefixStart) ||
+        b.score - a.score ||
+        b.completeness - a.completeness ||
+        a.food.nameRu.length - b.food.nameRu.length,
+    )
+    .slice(0, limit)
+    .map((r) => ({ ...toResult(r.food), match: r.m.kind }));
 }
 
 export type FoodUpsert = {

@@ -6,7 +6,7 @@ import { apiSession } from "@/lib/api";
 
 /**
  * GET /api/foods/search?q=сливки 20 — справочник (USDA, базовые, мои, сохранённые
- * из OFF) и «Мои блюда» с подходящим названием.
+ * из OFF) и «Блюда» с подходящим названием.
  */
 export async function GET(req: Request) {
   const { session, error } = await apiSession(req);
