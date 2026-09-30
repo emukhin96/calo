@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb } from "@/test/db";
 import type { DB } from ".";
 import { createOwnFood, findOwnFoodByBarcode, type FoodResult, getFood, searchFoods, upsertFood } from "./foods";
-import { entries, user } from "./schema";
+import { dayMeals, entries, user } from "./schema";
 import { seedFoods } from "./seed-foods";
 
 // Критерий готовности этапа 1 (docs/PLAN.md): типичные запросы находят верные
@@ -73,8 +73,12 @@ describe("ранжирование", () => {
   it("то, что уже ели, поднимается наверх", async () => {
     const before = await searchFoods(db, OWNER, "куриная грудка");
     const pick = before[before.length > 3 ? 3 : before.length - 1];
+    const [lunch] = await db
+      .insert(dayMeals)
+      .values({ ownerId: OWNER, date: "2026-09-29", name: "Обед", position: 1 })
+      .returning({ id: dayMeals.id });
     await db.insert(entries).values({
-      ownerId: OWNER, eatenAt: new Date(), meal: "lunch", inputMethod: "product",
+      ownerId: OWNER, mealId: lunch.id, eatenAt: new Date(), meal: "lunch", inputMethod: "product",
       title: pick.nameRu, foodId: pick.id, grams: 150, nutrients: {},
     });
     expect((await searchFoods(db, OWNER, "куриная грудка"))[0].id).toBe(pick.id);

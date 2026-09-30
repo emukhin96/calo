@@ -29,6 +29,13 @@
   color-scheme: light;
   /* Высота экрана под страницу: body уже отступил сверху под чёлку (см. ниже). */
   --app-h: calc(100dvh - env(safe-area-inset-top));
+  /*
+   * Нижняя панель вкладок (ui/TabBar): высота кнопок и сколько всего она
+   * закрывает снизу — вместе с индикатором «Домой». Страницы с вкладками
+   * отступают на --tabbar-space (pb-tabbar), липкие панели — поверх неё.
+   */
+  --tabbar-h: 56px;
+  --tabbar-space: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
 }
 
 html,
@@ -64,9 +71,26 @@ body {
   min-height: var(--app-h);
 }
 
+/* Конец страницы с вкладками: последний пункт не прячется под панелью вкладок. */
+@utility pb-tabbar {
+  padding-bottom: calc(var(--tabbar-space) + 32px);
+}
+
 /* Липкая панель внизу (BottomBar): поле в фокусе прокручивается выше неё, а не под неё. */
 html:has([data-bottom-bar]) {
   scroll-padding-bottom: calc(140px + env(safe-area-inset-bottom));
+}
+
+/* То же для панели вкладок — и для липкой кнопки над ней (Профиль → «Сохранить»). */
+html:has([data-tabbar]) {
+  scroll-padding-bottom: calc(var(--tabbar-space) + 16px);
+}
+html:has([data-tabbar]):has([data-bottom-bar]) {
+  scroll-padding-bottom: calc(var(--tabbar-space) + 140px);
+}
+/* Дневник: над вкладками ещё строка ввода (QuickAdd). */
+html:has([data-quickadd]) {
+  scroll-padding-bottom: calc(var(--tabbar-space) + 96px);
 }
 
 /* Цифры одинаковой ширины: 2 458 не «прыгает» при обновлении */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, dayRange, dayTitle, eatenAtFor, isIsoDate, isValidTimeZone, isWeeklyDigestTime, mealByHour, todayIn, zonedTime } from "./day";
+import { addDays, dayRange, dayTitle, isIsoDate, isValidTimeZone, isWeeklyDigestTime, mealByHour, todayIn, zonedTime } from "./day";
 
 describe("dayRange", () => {
   it("Москва: сутки начинаются в 21:00 UTC накануне", () => {
@@ -34,18 +34,6 @@ describe("mealByHour", () => {
     [7, "breakfast"], [12, "lunch"], [16, "snack"], [17, "snack"], [19, "dinner"], [23, "snack"], [3, "snack"],
   ] as const)("%i ч → %s", (h, meal) => {
     expect(mealByHour(h)).toBe(meal);
-  });
-});
-
-describe("eatenAtFor", () => {
-  const now = new Date("2026-09-29T10:00:00Z"); // 13:00 в Москве
-
-  it("сегодня — текущий момент", () => {
-    expect(eatenAtFor("2026-09-29", "breakfast", "Europe/Moscow", now)).toBe(now);
-  });
-
-  it("вчера — типичное время приёма", () => {
-    expect(eatenAtFor("2026-09-28", "dinner", "Europe/Moscow", now).toISOString()).toBe("2026-09-28T16:30:00.000Z");
   });
 });
 

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { amountToGrams, parseAmount } from "@/domain/amount";
 import { notifyChanged } from "@/lib/native";
 import { cacheGet, cacheSet, postEntry } from "@/lib/offline";
-import type { Meal } from "@/domain/day";
+import { type DayMeal, defaultMealChoice, type MealChoice, mealChoiceBody, newMealTime } from "@/lib/meal-choice";
 import type { FoodResult } from "@/db/foods";
 import type { RecipeSummary } from "@/db/recipes";
 import Link from "next/link";
@@ -13,7 +13,9 @@ import { NUTRIENT_KEYS, type NutrientVector } from "@/domain/nutrients";
 import { fmtAmount, NUTRIENT_LABELS, unitRu } from "@/ui/nutrients";
 import { Eyebrow } from "@/ui/components";
 import { BarcodeScanner } from "@/ui/BarcodeScanner";
+import { OwnFoodSheet } from "@/ui/OwnFoodSheet";
 import { PortionSheet } from "@/ui/PortionSheet";
+import { type AddTab, choiceMealName, type PreferredMeal } from "./add-flow";
 import { TextParse } from "./TextParse";
 
 type OffItem = { code: string; nameRu: string; brand: string | null; nutrientsPer100g: NutrientVector };
@@ -37,11 +39,13 @@ function Details({ n }: { n: NutrientVector }) {
   return (
     <div className="mt-3 rounded-xl bg-bg p-3">
       <Eyebrow className="!text-[12px]">на 100 г · известно {known.length} из {rows.length}</Eyebrow>
-      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[14px]">
+      {/* Две колонки — только где «B2 (рибофлавин) 0,35 мг» умещается в половину: на 375 px слово
+          рвалось посередине, а на 320 px значение уезжало за край карточки. */}
+      <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-[14px] leading-snug min-[400px]:grid-cols-2">
         {rows.map((k) => (
-          <div key={k} className="flex justify-between">
-            <dt className="text-ink-3">{NUTRIENT_LABELS[k]}</dt>
-            <dd className="tabular text-ink-2">
+          <div key={k} className="flex items-baseline justify-between gap-2">
+            <dt className="min-w-0 text-ink-3">{NUTRIENT_LABELS[k]}</dt>
+            <dd className="tabular shrink-0 text-ink-2">
               {n[k] == null ? "—" : `${fmtAmount(n[k])} ${unitRu(k)}`}
             </dd>
           </div>
@@ -53,20 +57,60 @@ function Details({ n }: { n: NutrientVector }) {
 
 type Recent = { food: FoodResult; lastGrams: number };
 
-type Picked =
-  | { kind: "food"; food: FoodResult; grams: number }
-  | { kind: "recipe"; recipe: RecipeSummary; grams: number };
+type Item = { kind: "food"; food: FoodResult } | { kind: "recipe"; recipe: RecipeSummary };
+
+/** Что открыто в листе порции; приём по умолчанию и время нового — на момент открытия. */
+type Picked = Item & { grams: number; meal: MealChoice; newTime: string | undefined };
+
+/** Свой продукт «КБЖУ с упаковки»: из поиска (название) или после неизвестного штрихкода. */
+type Own = { name: string; barcode: string; note?: string };
+
+/** Сообщение под поиском: «ищу товар…», нет товара (с формой своего продукта), ошибка сети (с повтором). */
+type ScanMsg = { text: string; own?: string; retry?: string };
 
 function recipePortion(r: RecipeSummary) {
   return r.defaultPortionG ? { grams: Math.round(r.defaultPortionG), label: `порция (${Math.round(r.defaultPortionG)} г)` } : null;
 }
 
+/** Граммы по умолчанию — до 0,1 г, как их показывает поле: дробная порция (12,5 г) совпадает со своей кнопкой. */
+const round1 = (g: number) => Math.round(g * 10) / 10;
+
 function portionOf(f: FoodResult) {
   return f.defaultPortionG ? { grams: f.defaultPortionG, label: f.portionLabel ?? `порция ${f.defaultPortionG} г` } : null;
 }
 
-/** Поиск продукта → лист порции → запись в дневник за день date. */
-export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
+const TABS: [AddTab, string][] = [
+  ["food", "Продукт"],
+  ["text", "Текст"],
+  ["recipes", "Мои блюда"],
+];
+
+/**
+ * Поиск продукта → лист порции → запись в дневник за день date. meals — приёмы
+ * дня по порядку (с сервера), plan — свой список приёмов из Профиля (новый приём
+ * встаёт на место по нему), showTimes — показ времени приёмов включён в Профиле;
+ * preferred — приём из ссылки «добавить в этот приём».
+ */
+export function FoodSearch({
+  date,
+  meals,
+  plan,
+  showTimes,
+  isToday,
+  preferred,
+  initialTab = "food",
+  initialText,
+}: {
+  date: string;
+  meals: DayMeal[];
+  plan: string[];
+  showTimes: boolean;
+  isToday: boolean;
+  preferred: PreferredMeal | null;
+  initialTab?: AddTab;
+  /** Текст из строки ввода дневника — вкладка «Текст» сразу его разбирает. */
+  initialText?: string | null;
+}) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [items, setItems] = useState<FoodResult[]>([]);
@@ -74,25 +118,51 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
   const [off, setOff] = useState<OffItem[] | null>(null);
   const [offState, setOffState] = useState<"idle" | "loading" | "error">("idle");
   const [open, setOpen] = useState<string | null>(null);
-  const [tab, setTab] = useState<"food" | "recipes" | "text">("food");
+  const [tab, setTab] = useState<AddTab>(initialTab);
   const [recipes, setRecipes] = useState<RecipeSummary[] | null>(null);
   const [foundRecipes, setFoundRecipes] = useState<RecipeSummary[]>([]);
   const [picked, setPicked] = useState<Picked | null>(null);
+  const [own, setOwn] = useState<Own | null>(null);
   const [scanning, setScanning] = useState(false);
   const [searchOffline, setSearchOffline] = useState(false);
-  const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [scanMsg, setScanMsg] = useState<ScanMsg | null>(null);
   const seq = useRef(0);
   const { query, amount } = parseAmount(q);
 
+  /** Приём по умолчанию и время нового приёма — «сейчас» считаем в момент выбора продукта. */
+  const mealDefaults = useCallback(
+    () => ({ meal: defaultMealChoice({ meals, plan, isToday, preferred }), newTime: newMealTime(isToday) }),
+    [meals, plan, isToday, preferred],
+  );
+  // Лист уже открыт — поздний ответ (штрихкод, товар OFF) его не подменяет: лист
+  // читает граммы и приём один раз, и чужой продукт записался бы с ними.
+  const openPortion = useCallback(
+    (item: Item, grams: number) => {
+      const next = { ...item, grams, ...mealDefaults() };
+      setPicked((cur) => cur ?? next);
+    },
+    [mealDefaults],
+  );
+  // openPortion новый после каждого обновления страницы с сервера (приёмы дня) —
+  // стабильный onBarcode (и повтор поиска кода) берёт свежий из ref.
+  const openRef = useRef(openPortion);
   useEffect(() => {
-    fetch(`/api/recipes?meal=${meal}`)
+    openRef.current = openPortion;
+  });
+
+  // «Мои блюда» — вероятные для приёма сверху: из ссылки, иначе для того, что предложим по умолчанию
+  // (начатый только что приём или следующий по списку). Зависим от названия, а не от приёмов дня:
+  // обновление страницы с сервера (возврат в приложение) не перезапрашивает список.
+  const recipesFor = choiceMealName(mealDefaults().meal, meals);
+  useEffect(() => {
+    fetch(recipesFor ? `/api/recipes?mealName=${encodeURIComponent(recipesFor)}` : "/api/recipes")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => {
         setRecipes(d.items);
         cacheSet("recipes", d.items);
       })
       .catch(() => setRecipes(cacheGet<RecipeSummary[]>("recipes") ?? [])); // без сети — последний список
-  }, [meal]);
+  }, [recipesFor]);
 
   useEffect(() => {
     fetch("/api/entries/recent")
@@ -133,57 +203,67 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
   /** Граммы по умолчанию: из строки («кефир 250», «яйцо 2 шт»), иначе порция, иначе 100. */
   function pick(food: FoodResult, fallback?: number) {
     const fromQuery = amount ? amountToGrams(amount, food.defaultPortionG) : null;
-    setPicked({ kind: "food", food, grams: Math.round(fromQuery ?? fallback ?? food.defaultPortionG ?? 100) });
+    openPortion({ kind: "food", food }, round1(fromQuery ?? fallback ?? food.defaultPortionG ?? 100));
   }
 
   function pickRecipe(recipe: RecipeSummary) {
     const fromQuery = amount && "grams" in amount ? amount.grams : null;
     const pieces = amount && "pieces" in amount ? amount.pieces : 1;
-    setPicked({ kind: "recipe", recipe, grams: Math.round(fromQuery ?? (recipe.defaultPortionG ?? 100) * pieces) });
+    openPortion({ kind: "recipe", recipe }, Math.round(fromQuery ?? (recipe.defaultPortionG ?? 100) * pieces));
   }
 
-  /** Штрихкод → свой справочник или Open Food Facts → лист порции. */
+  /** Штрихкод → свой справочник или Open Food Facts → лист порции; нет товара — КБЖУ с упаковки. */
   const onBarcode = useCallback(
     async (code: string) => {
       setScanning(false);
-      setScanMsg(`Ищу товар ${code}…`);
+      setScanMsg({ text: `Ищу товар ${code}…` });
       const res = await fetch(`/api/foods/barcode/${code}`).catch(() => null);
       if (res?.ok) {
         const food = (await res.json()) as FoodResult;
         setScanMsg(null);
-        setPicked({ kind: "food", food, grams: Math.round(food.defaultPortionG ?? 100) });
+        openRef.current({ kind: "food", food }, round1(food.defaultPortionG ?? 100));
+      } else if (res?.status === 404) {
+        setScanMsg({ text: `Товара ${code} нет в Open Food Facts или у него нет КБЖУ.`, own: code });
+      } else if (res?.status === 400) {
+        setScanMsg({ text: `${code} не похож на штрихкод — проверьте цифры.` });
       } else {
-        setScanMsg(
-          res?.status === 404
-            ? `Товара ${code} нет в Open Food Facts или у него нет КБЖУ — найдите продукт по названию.`
-            : "Open Food Facts не отвечает — попробуйте ещё раз или найдите по названию.",
-        );
+        setScanMsg({ text: "Не получилось найти товар: нет сети или Open Food Facts не отвечает.", retry: code });
       }
     },
     [],
   );
 
+  /** Свой продукт сохранён — сразу лист порции; в списке поиска он тоже появляется. */
+  function onOwnSaved(food: FoodResult) {
+    const fromBarcode = own?.barcode;
+    setOwn(null);
+    setScanMsg(null);
+    setItems((prev) => [food, ...prev.filter((f) => f.id !== food.id)]);
+    if (fromBarcode) openPortion({ kind: "food", food }, round1(food.defaultPortionG ?? 100));
+    else pick(food);
+  }
+
   async function searchOff() {
     setOffState("loading");
-    const res = await fetch(`/api/foods/off?q=${encodeURIComponent(query)}`);
-    const data = await res.json();
+    const res = await fetch(`/api/foods/off?q=${encodeURIComponent(query)}`).catch(() => null);
+    const data = res ? await res.json().catch(() => ({})) : {};
     setOff(data.items ?? []);
-    setOffState(res.ok ? "idle" : "error");
+    setOffState(res?.ok ? "idle" : "error");
   }
 
   async function pickOff(item: OffItem) {
-    const res = await fetch(`/api/foods/barcode/${item.code}`);
-    if (!res.ok) return;
+    const res = await fetch(`/api/foods/barcode/${item.code}`).catch(() => null);
+    if (!res?.ok) return;
     const saved = (await res.json()) as FoodResult;
     setItems((prev) => [saved, ...prev.filter((f) => f.id !== saved.id)]);
     setOff((prev) => prev?.filter((o) => o.code !== item.code) ?? null);
     pick(saved);
   }
 
-  async function addEntry(grams: number, m: Meal) {
+  async function addEntry(grams: number, choice: MealChoice) {
     const p = picked!;
     const result = await postEntry(
-      { ...(p.kind === "food" ? { foodId: p.food.id } : { recipeId: p.recipe.id }), grams, meal: m, date },
+      { ...(p.kind === "food" ? { foodId: p.food.id } : { recipeId: p.recipe.id }), grams, date, ...mealChoiceBody(choice) },
       p.kind === "food" ? p.food.nameRu : p.recipe.name,
     );
     if (result === "queued") {
@@ -227,7 +307,7 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
     <li key={r.id}>
       <button type="button" className="w-full py-3 text-left" onClick={() => pickRecipe(r)}>
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[16px] font-semibold text-ink">{r.name}</span>
+          <span className="min-w-0 text-[16px] font-semibold text-ink">{r.name}</span>
           <span className="shrink-0 font-mono text-[11px] tracking-[0.06em] text-accent uppercase">блюдо</span>
         </div>
         <div className="mt-0.5 text-[14px] text-ink-2">
@@ -251,27 +331,34 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
   return (
     <div>
       <div className="mb-4 grid grid-cols-3 gap-1 rounded-2xl bg-line/60 p-1">
-        {(
-          [
-            ["food", "Продукт"],
-            ["text", "Текст"],
-            ["recipes", `Мои блюда${recipes?.length ? ` · ${recipes.length}` : ""}`],
-          ] as const
-        ).map(([t, label]) => (
+        {TABS.map(([t, label]) => (
           <button
             key={t}
             type="button"
+            aria-pressed={tab === t}
             onClick={() => setTab(t)}
-            className={`rounded-xl py-2 text-[15px] font-semibold ${tab === t ? "bg-surface text-ink shadow-sm" : "text-ink-2"}`}
+            className={`truncate rounded-xl px-1 py-2 text-[15px] font-semibold max-[360px]:text-[14px] ${
+              tab === t ? "bg-surface text-ink shadow-sm" : "text-ink-2"
+            }`}
           >
             {label}
+            {/* Счётчик блюд — только когда умещается: на 320 px «Мои блюда · 12» переносилось. */}
+            {t === "recipes" && recipes?.length ? <span className="max-[400px]:hidden"> · {recipes.length}</span> : null}
           </button>
         ))}
       </div>
 
       {/* Вкладка «Текст» не размонтируется: разобранный список переживает переход в «Продукт» и обратно. */}
       <div hidden={tab !== "text"}>
-        <TextParse date={date} meal={meal} />
+        <TextParse
+          date={date}
+          meals={meals}
+          plan={plan}
+          showTimes={showTimes}
+          isToday={isToday}
+          preferred={preferred}
+          initialText={initialText}
+        />
       </div>
       {tab === "text" ? null : tab === "recipes" ? (
         <>
@@ -304,6 +391,8 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
           type="button"
           aria-label="Сканировать штрихкод"
           onClick={() => {
+            // Клавиатура поиска не должна оставаться поверх камеры.
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
             setScanMsg(null);
             setScanning(true);
           }}
@@ -315,7 +404,34 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
           </svg>
         </button>
       </div>
-      {scanMsg && <p className="mt-3 rounded-2xl bg-surface px-4 py-3 text-[15px] text-ink-2">{scanMsg}</p>}
+      {scanMsg && (
+        <div className="mt-3 rounded-2xl bg-surface px-4 py-3 text-[15px] leading-snug text-ink-2">
+          {scanMsg.text}
+          {scanMsg.retry && (
+            <button type="button" onClick={() => onBarcode(scanMsg.retry!)} className="ml-2 font-semibold text-accent">
+              Повторить
+            </button>
+          )}
+          {scanMsg.own && (
+            <>
+              <span> Перепишите КБЖУ с упаковки — в следующий раз товар найдётся по штрихкоду.</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setOwn({
+                    name: "",
+                    barcode: scanMsg.own!,
+                    note: `Товара ${scanMsg.own} нет в Open Food Facts (или там нет его КБЖУ) — перепишите КБЖУ с упаковки.`,
+                  })
+                }
+                className="mt-3 flex h-12 w-full items-center justify-center rounded-[var(--radius-button)] bg-accent text-[16px] font-bold text-white active:bg-accent-press"
+              >
+                Внести КБЖУ с упаковки
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {searchOffline && query.trim().length >= 2 && (
         <p className="mt-3 rounded-2xl bg-surface px-4 py-3 text-[15px] text-ink-2">
           Нет сети — поиск недоступен. Добавить можно из недавних и «Моих блюд»: запись отправится, когда появится сеть.
@@ -351,7 +467,7 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
               type="button"
               onClick={searchOff}
               disabled={offState === "loading"}
-              className="w-full rounded-[var(--radius-button)] border-2 border-accent py-3.5 text-[16px] font-bold text-accent disabled:opacity-50"
+              className="w-full rounded-[var(--radius-button)] border-2 border-accent px-3 py-3.5 text-[16px] font-bold text-accent disabled:opacity-50"
             >
               {offState === "loading" ? "Ищу в Open Food Facts…" : items.length ? "Нет нужного? Искать товар в Open Food Facts" : "Искать товар в Open Food Facts"}
             </button>
@@ -375,6 +491,14 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
               </ul>
             </>
           )}
+          {/* Нет ни в справочнике, ни в OFF — переписать КБЖУ с упаковки. */}
+          <button
+            type="button"
+            onClick={() => setOwn({ name: query.trim(), barcode: "" })}
+            className="mt-3 py-1 text-left text-[15px] font-semibold text-accent"
+          >
+            + Свой продукт (КБЖУ с упаковки)
+          </button>
         </div>
       )}
 
@@ -383,14 +507,28 @@ export function FoodSearch({ date, meal }: { date: string; meal: Meal }) {
 
       {scanning && <BarcodeScanner onCode={onBarcode} onClose={() => setScanning(false)} />}
 
+      {own && (
+        <OwnFoodSheet
+          initialName={own.name}
+          initialBarcode={own.barcode}
+          note={own.note}
+          onSaved={onOwnSaved}
+          onClose={() => setOwn(null)}
+        />
+      )}
+
       {picked && (
         <PortionSheet
           title={picked.kind === "food" ? picked.food.nameRu : picked.recipe.name}
           subtitle={picked.kind === "food" ? (picked.food.brand ?? undefined) : "моё блюдо"}
           per100g={picked.kind === "food" ? picked.food.nutrientsPer100g : picked.recipe.nutrientsPer100g}
           initialGrams={picked.grams}
-          initialMeal={meal}
           portion={picked.kind === "food" ? portionOf(picked.food) : recipePortion(picked.recipe)}
+          meals={meals}
+          plan={plan}
+          showTimes={showTimes}
+          initialMeal={picked.meal}
+          defaultNewTime={picked.newTime}
           submitLabel="Добавить"
           onSubmit={addEntry}
           onClose={() => setPicked(null)}

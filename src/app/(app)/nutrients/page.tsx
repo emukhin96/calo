@@ -38,8 +38,8 @@ export default async function NutrientsPage({ searchParams }: PageProps<"/nutrie
     return (
       <li className="py-3">
         <div className="flex items-baseline justify-between gap-3 text-[15px]">
-          <span className="font-semibold text-ink">{NUTRIENT_LABELS[r.key]}</span>
-          <span className="tabular text-ink-2">
+          <span className="min-w-0 font-semibold text-ink">{NUTRIENT_LABELS[r.key]}</span>
+          <span className="tabular shrink-0 text-ink-2">
             {fmtAmount(r.value)}
             {r.missing > 0 && "+"} / {r.norm.kind === "limit" ? "≤ " : ""}
             {fmtAmount(r.norm.value)} {unitRu(r.key)}
@@ -64,8 +64,8 @@ export default async function NutrientsPage({ searchParams }: PageProps<"/nutrie
   };
 
   return (
-    <main className="mx-auto max-w-xl px-6 pt-6 pb-16">
-      <div className="flex items-center justify-between">
+    <main className="mx-auto max-w-xl px-6 pt-6 pb-tabbar">
+      <div className="flex items-center justify-between gap-3">
         <Eyebrow>Нутриенты · {dayTitle(date, tz).toLowerCase()}</Eyebrow>
         <Link href={`/?d=${date}`} className="text-[16px] font-semibold text-accent">
           Готово

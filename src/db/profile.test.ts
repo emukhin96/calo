@@ -2,7 +2,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { normsFromState } from "@/lib/norms";
 import { createTestDb } from "@/test/db";
 import type { DB } from ".";
-import { addWeight, getUserState, saveProfile, setGoal, setOverride, weightHistory } from "./profile";
+import { NotFoundError } from "./errors";
+import {
+  addWeight,
+  getMealSettings,
+  getUserState,
+  saveMealSettings,
+  saveProfile,
+  setGoal,
+  setOverride,
+  weightHistory,
+} from "./profile";
 import { goals, user } from "./schema";
 
 let db: DB;
@@ -17,8 +27,12 @@ beforeAll(async () => {
 afterAll(() => close());
 
 describe("профиль и нормы", () => {
-  it("до онбординга норм нет", async () => {
-    expect(normsFromState(await getUserState(db, ME))).toBeNull();
+  it("до онбординга норм нет; приёмы пищи — по умолчанию, сохранить их нельзя", async () => {
+    const state = await getUserState(db, ME);
+    expect(normsFromState(state)).toBeNull();
+    expect(state).toMatchObject({ mealPlan: ["Завтрак", "Обед", "Перекус", "Ужин"], showMealTimes: false });
+    expect(await getMealSettings(db, ME)).toEqual({ plan: ["Завтрак", "Обед", "Перекус", "Ужин"], showTimes: false });
+    await expect(saveMealSettings(db, ME, { showTimes: true })).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it("онбординг → нормы", async () => {
@@ -63,5 +77,22 @@ describe("профиль и нормы", () => {
     norms = normsFromState(await getUserState(db, ME), NOW)!;
     expect(norms.kcal).not.toBe(2000);
     expect(norms.nutrients.protein?.value).toBe(150);
+  });
+});
+
+describe("настройки приёмов пищи", () => {
+  it("новый профиль — список по умолчанию, время скрыто", async () => {
+    expect(await getMealSettings(db, ME)).toEqual({ plan: ["Завтрак", "Обед", "Перекус", "Ужин"], showTimes: false });
+  });
+
+  it("свой список и показ времени сохраняются по отдельности; профиль их не сбрасывает", async () => {
+    const plan = ["Завтрак", "Второй завтрак", "Обед", "Полдник", "Перекус", "Ужин", "Перекус"];
+    expect(await saveMealSettings(db, ME, { plan })).toEqual({ plan, showTimes: false });
+    expect(await saveMealSettings(db, ME, { showTimes: true })).toEqual({ plan, showTimes: true });
+    await saveProfile(db, ME, { sex: "male", birthYear: 1996, heightCm: 181, activity: "moderate", timezone: "Asia/Yerevan" });
+    const state = await getUserState(db, ME);
+    expect(state.mealPlan).toEqual(plan);
+    expect(state.showMealTimes).toBe(true);
+    expect(await saveMealSettings(db, ME, {})).toEqual({ plan, showTimes: true });
   });
 });

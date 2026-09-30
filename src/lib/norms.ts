@@ -19,7 +19,11 @@ export function normsFromState(state: UserState, now = new Date()): Norms | null
   return applyOverrides(norms, state.overrides);
 }
 
+/**
+ * Состояние пользователя для страниц и /api/me: профиль, цель, вес, нормы и
+ * настройки приёмов пищи (свой порядок приёмов, показ времени).
+ */
 export async function loadUser(ownerId: string) {
   const state = await getUserState(db, ownerId);
-  return { state, norms: normsFromState(state) };
+  return { state, norms: normsFromState(state), mealPlan: state.mealPlan, showMealTimes: state.showMealTimes };
 }

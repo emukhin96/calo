@@ -3,7 +3,7 @@ import { isIsoDate } from "@/domain/day";
 import { apiSession } from "@/lib/api";
 import { markWeekSeen } from "@/lib/week";
 
-/** POST /api/week/seen { weekStart } — «Понятно»: больше не открывать разбор сам. */
+/** POST /api/week/seen { weekStart } — разбор просмотрен: больше не открывать его сам. */
 export async function POST(req: Request) {
   const { session, error } = await apiSession(req);
   if (error) return error;
