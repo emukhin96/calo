@@ -2,8 +2,9 @@ import { z } from "zod";
 import { db } from "@/db";
 import { BadRequestError, deleteEntry, NotFoundError, updateEntry } from "@/db/entries";
 import { MEALS } from "@/domain/day";
-import { isTime, MEAL_NAME_MAX } from "@/domain/meals";
+import { isTime } from "@/domain/meals";
 import { apiSession } from "@/lib/api";
+import { MealNameField } from "@/lib/meal-schema";
 import { userTimeZone } from "@/lib/tz";
 
 const PatchBody = z
@@ -12,7 +13,7 @@ const PatchBody = z
     /** Перенести в приём того же дня. */
     mealId: z.uuid().optional(),
     /** Перенести в приём дня с этим названием (newMeal — в новый). */
-    mealName: z.string().trim().min(1).max(MEAL_NAME_MAX * 2).optional(), // 40 кодовых точек — normalizeMealName
+    mealName: MealNameField.optional(),
     newMeal: z.boolean().optional(),
     /** С mealName — местное «HH:MM» нового приёма (время приёмов включено в Профиле). */
     time: z.string().refine(isTime).optional(),

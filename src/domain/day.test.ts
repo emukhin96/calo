@@ -46,6 +46,9 @@ describe("разное", () => {
   it("isIsoDate / isValidTimeZone", () => {
     expect(isIsoDate("2026-09-29")).toBe(true);
     expect(isIsoDate("2026-13-45")).toBe(false);
+    expect(isIsoDate("2026-02-30")).toBe(false); // Date.parse перенёс бы на 2 марта
+    expect(isIsoDate("2026-02-29")).toBe(false);
+    expect(isIsoDate("2028-02-29")).toBe(true);
     expect(isIsoDate("29.09.2026")).toBe(false);
     expect(isValidTimeZone("Asia/Yerevan")).toBe(true);
     expect(isValidTimeZone("Mars/Olympus")).toBe(false);

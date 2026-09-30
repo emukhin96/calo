@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { zonedTime } from "./day";
 import {
+  clampMealName,
   DEFAULT_MEAL_PLAN,
   defaultMealName,
   defaultMealTarget,
@@ -55,6 +56,32 @@ describe("normalizeMealName", () => {
     expect(normalizeMealName(" перекус ")).toBe("Перекус");
     expect(presetOf("обед")).toBe("Обед");
     expect(presetOf("Второй завтрак")).toBeNull();
+  });
+});
+
+describe("clampMealName: поле названия на клиенте", () => {
+  it("40 кодовых точек, как normalizeMealName, а не 40 единиц UTF-16", () => {
+    const apples = "🍎".repeat(45);
+    expect(apples.length).toBe(90);
+    expect(clampMealName(apples)).toBe("🍎".repeat(40)); // maxLength={40} оставил бы 20
+    expect(clampMealName("а".repeat(41))).toBe("а".repeat(40));
+    // короче лимита — как есть (пробелы и регистр поправит normalizeMealName)
+    expect(clampMealName("  перекус ")).toBe("  перекус ");
+    expect(clampMealName("")).toBe("");
+  });
+
+  it("суррогатная пара не режется пополам; составной эмодзи — по кодовым точкам", () => {
+    const cut = clampMealName("x".repeat(39) + "🍎🍎");
+    expect(cut).toBe("x".repeat(39) + "🍎");
+    // 👨‍👩‍👧 — пять кодовых точек (три эмодзи и два ZWJ): на границе остаётся начало,
+    // но без половинок суррогатных пар
+    const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}";
+    const tail = clampMealName("x".repeat(37) + family);
+    expect(Array.from(tail)).toHaveLength(40);
+    expect(tail).toBe("x".repeat(37) + "\u{1F468}\u200D\u{1F469}");
+    expect(tail.isWellFormed()).toBe(true);
+    // результат normalizeMealName не меняет
+    expect(normalizeMealName(clampMealName("x".repeat(37) + family))).toBe(normalizeMealName("x".repeat(37) + family));
   });
 });
 

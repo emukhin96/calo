@@ -1,5 +1,5 @@
 {
-  "id": "fb3ff617-cb42-41ce-b0a0-6143d8830d59",
+  "id": "d18c9665-f5cf-4044-943e-0dede9e69c17",
   "prevId": "a0c36899-67bb-4166-a7de-d951df88a57b",
   "version": "7",
   "dialect": "postgresql",
@@ -569,6 +569,93 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.day_meals": {
+      "name": "day_meals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "day_meals_owner_date_idx": {
+          "name": "day_meals_owner_date_idx",
+          "columns": [
+            {
+              "expression": "owner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "day_meals_owner_id_user_id_fk": {
+          "name": "day_meals_owner_id_user_id_fk",
+          "tableFrom": "day_meals",
+          "tableTo": "user",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.entries": {
       "name": "entries",
       "schema": "",
@@ -586,6 +673,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "meal_id": {
+          "name": "meal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "eaten_at": {
           "name": "eaten_at",
           "type": "timestamp with time zone",
@@ -596,12 +689,6 @@
           "name": "meal",
           "type": "meal",
           "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "meal_name": {
-          "name": "meal_name",
-          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -695,6 +782,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "entries_meal_idx": {
+          "name": "entries_meal_idx",
+          "columns": [
+            {
+              "expression": "meal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -704,6 +806,19 @@
           "tableTo": "user",
           "columnsFrom": [
             "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "entries_meal_id_day_meals_id_fk": {
+          "name": "entries_meal_id_day_meals_id_fk",
+          "tableFrom": "entries",
+          "tableTo": "day_meals",
+          "columnsFrom": [
+            "meal_id"
           ],
           "columnsTo": [
             "id"
@@ -1089,6 +1204,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'Europe/Moscow'"
+        },
+        "meal_plan": {
+          "name": "meal_plan",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{Завтрак,Обед,Перекус,Ужин}'::text[]"
+        },
+        "show_meal_times": {
+          "name": "show_meal_times",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "onboarded_at": {
           "name": "onboarded_at",

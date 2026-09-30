@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { dayTitle, isIsoDate, todayIn } from "@/domain/day";
+import { db } from "@/db";
+import { getMealSettings } from "@/db/profile";
+import { dayTitle, todayIn } from "@/domain/day";
 import { loadDay } from "@/lib/diary";
+import { diaryDateOf } from "@/lib/diary-date";
 import { shortTime, toDayMeals } from "@/lib/meal-choice";
-import { loadUser } from "@/lib/norms";
 import { requireSession } from "@/lib/session";
 import { userTimeZone } from "@/lib/tz";
 import { Eyebrow } from "@/ui/components";
@@ -12,7 +14,8 @@ import { FoodSearch } from "./FoodSearch";
 /**
  * «Добавить»: «Продукт» — поиск по справочнику → порция → запись; «Текст» — разбор
  * описания через Gemini (этап 6); «Мои блюда». Фото — этап 7.
- * /add?d=2026-09-29 — в день; &meal=<id приёма дня> — в этот приём, &meal=Обед —
+ * /add?d=2026-09-29 — в день (будущий — сегодня, как на главном экране: записи
+ * в будущий день не бывает); &meal=<id приёма дня> — в этот приём, &meal=Обед —
  * в приём с этим названием (или новый; старое &meal=lunch тоже); &text=… — из
  * строки ввода дневника, сразу разбор; &tab=food|text|recipes. Прежний &t= не нужен.
  */
@@ -21,14 +24,14 @@ export default async function AddPage({ searchParams }: PageProps<"/add">) {
   const tz = await userTimeZone(session.user.id);
   const sp = await searchParams;
   const today = todayIn(tz);
-  const d = typeof sp.d === "string" && isIsoDate(sp.d) ? sp.d : today;
+  const d = diaryDateOf(sp.d, today);
   const preferred = preferredMealOf(sp.meal);
   const text = initialTextOf(sp.text);
   const tab = addTabOf(sp.tab, text);
   // Приёмы дня по порядку — выбор «в какой приём» в листе порции и после разбора
   // текста; свой список приёмов и показ времени — из Профиля.
-  const [{ meals }, { mealPlan, showMealTimes }] = await Promise.all([loadDay(session.user.id, d, tz), loadUser(session.user.id)]);
-  const title = preferredMealTitle(meals, preferred, showMealTimes);
+  const [{ meals }, { plan, showTimes }] = await Promise.all([loadDay(session.user.id, d, tz), getMealSettings(db, session.user.id)]);
+  const title = preferredMealTitle(meals, preferred, showTimes);
 
   return (
     <main className="mx-auto max-w-xl px-6 pt-8 pb-[calc(64px+env(safe-area-inset-bottom))]">
@@ -55,9 +58,9 @@ export default async function AddPage({ searchParams }: PageProps<"/add">) {
       <FoodSearch
         key={`${d}|${preferredKey(preferred)}`}
         date={d}
-        meals={toDayMeals(meals, showMealTimes)}
-        plan={mealPlan}
-        showTimes={showMealTimes}
+        meals={toDayMeals(meals, showTimes)}
+        plan={plan}
+        showTimes={showTimes}
         isToday={d === today}
         preferred={preferred}
         initialTab={tab}

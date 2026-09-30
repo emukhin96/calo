@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { MEAL_NAME_MAX, mealKey, normalizeMealName, parseTime, planNames } from "@/domain/meals";
+import { clampMealName, MEAL_NAME_MAX, mealKey, normalizeMealName, parseTime, planNames } from "@/domain/meals";
 import { countOf } from "@/domain/text";
 import { addHref } from "@/lib/diary-view";
 import { shortTime } from "@/lib/meal-choice";
@@ -185,11 +185,11 @@ export function MealSheet({
           <input
             aria-label="Название приёма"
             value={name}
-            maxLength={MEAL_NAME_MAX}
+            maxLength={MEAL_NAME_MAX * 2}
             placeholder="Своё название"
             autoComplete="off"
             enterKeyHint="done"
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setName(clampMealName(e.target.value))}
             onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             className="h-11 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3.5 text-[17px] text-ink outline-none placeholder:text-ink-3/60 focus:border-accent"
           />

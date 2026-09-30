@@ -2,14 +2,15 @@ import { z } from "zod";
 import { db } from "@/db";
 import { BadRequestError, NotFoundError } from "@/db/errors";
 import { deleteDayMeal, updateDayMeal } from "@/db/meals";
-import { isTime, MEAL_NAME_MAX } from "@/domain/meals";
+import { isTime } from "@/domain/meals";
 import { apiSession } from "@/lib/api";
+import { MealNameField } from "@/lib/meal-schema";
 import { userTimeZone } from "@/lib/tz";
 
 const PatchBody = z
   .object({
-    /** Новое название приёма (40 кодовых точек отрежет normalizeMealName; эмодзи — две единицы .length). */
-    name: z.string().trim().min(1).max(MEAL_NAME_MAX * 2).optional(),
+    /** Новое название приёма. */
+    name: MealNameField.optional(),
     /** Местное «HH:MM»: все записи приёма — на это время его дня. */
     time: z.string().refine(isTime).optional(),
     /** Поменяться местами с соседом выше / ниже. */

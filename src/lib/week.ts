@@ -83,6 +83,7 @@ export async function loadWeekReport(ownerId: string, monday: string, tz: string
   return { report, seen: stored?.seenAt != null };
 }
 
+/** Разбор недели просмотрен: больше не открывать его сам (строку разбора создаёт loadWeekReport). */
 export async function markWeekSeen(ownerId: string, monday: string) {
   await db
     .update(weeklyReports)
@@ -93,7 +94,7 @@ export async function markWeekSeen(ownerId: string, monday: string) {
 /**
  * Показать ли разбор при открытии приложения: прошлая неделя закончилась,
  * в ней хотя бы 3 дня с записями, и разбор ещё не видели (открывшийся разбор
- * отмечается просмотренным сразу — week/UnderstoodButton).
+ * отмечается просмотренным ещё до показа — week/page.tsx, markWeekSeen).
  */
 export async function shouldShowWeek(ownerId: string, tz: string): Promise<boolean> {
   const monday = lastCompleteWeek(tz);

@@ -51,9 +51,12 @@ export function PickFoodSheet({ title, initialQuery, onPick, onClose }: { title:
     setOffState(res?.ok ? "idle" : "error");
   }
 
-  /** Товар OFF сохраняется в справочник (как во вкладке «Продукт») и сразу выбирается. */
+  /**
+   * Товар OFF сохраняется в справочник (как во вкладке «Продукт») и сразу выбирается.
+   * source=off — именно этот товар, даже если есть свой продукт с тем же штрихкодом.
+   */
   async function pickOff(item: OffItem) {
-    const res = await fetch(`/api/foods/barcode/${item.code}`).catch(() => null);
+    const res = await fetch(`/api/foods/barcode/${item.code}?source=off`).catch(() => null);
     if (!res?.ok) return;
     onPick((await res.json()) as FoodResult);
   }

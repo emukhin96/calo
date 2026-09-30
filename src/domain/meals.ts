@@ -52,6 +52,19 @@ export function normalizeMealName(s: string | null | undefined): string | null {
   return MEAL_PRESETS.find((p) => lower(p) === lower(name)) ?? name;
 }
 
+/**
+ * Поле названия приёма на клиенте: не длиннее 40 кодовых точек — как считает
+ * normalizeMealName. maxLength у поля считает единицы UTF-16, и эмодзи (две
+ * единицы) расходовали бы лимит вдвое быстрее, чем на сервере. Режет по кодовым
+ * точкам, а не по графемам: составной эмодзи (ZWJ-последовательность, флаг,
+ * оттенок кожи) на границе может потерять хвост — остаются целые символы, как
+ * и после normalizeMealName.
+ */
+export function clampMealName(s: string): string {
+  const chars = Array.from(s);
+  return chars.length > MEAL_NAME_MAX ? chars.slice(0, MEAL_NAME_MAX).join("") : s;
+}
+
 /** Ключ сравнения названий: регистр и пробелы не важны. */
 export const mealKey = (name: string) => lower(normalizeMealName(name) ?? "");
 

@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type ReactNode, useSyncExternalStore } from "react";
-import { localDate } from "@/lib/meal-choice";
+import type { ReactNode } from "react";
 import { useKeyboardInset } from "./useKeyboardInset";
 
 type Tab = { href: string; label: string; active: (path: string) => boolean; icon: ReactNode };
@@ -54,16 +53,6 @@ const TABS: Tab[] = [
 /** Экраны без вкладок: добавление, первый запуск, редактор блюда — у них своя кнопка внизу. */
 const hiddenOn = (p: string) => p.startsWith("/add") || p.startsWith("/onboarding") || /^\/recipes\/./.test(p);
 
-/** Дата телефона обновляется, когда приложение снова на экране (открыли утром). */
-function subscribeDay(onChange: () => void) {
-  document.addEventListener("visibilitychange", onChange);
-  window.addEventListener("focus", onChange);
-  return () => {
-    document.removeEventListener("visibilitychange", onChange);
-    window.removeEventListener("focus", onChange);
-  };
-}
-
 /**
  * Нижняя панель вкладок: Дневник · Неделя · Блюда · Профиль. Высота —
  * --tabbar-h (globals.css), вместе с индикатором «Домой» — --tabbar-space:
@@ -73,10 +62,6 @@ function subscribeDay(onChange: () => void) {
 export function TabBar() {
   const pathname = usePathname();
   const keyboard = useKeyboardInset();
-  // «Дневник» — на сегодня явной датой: «/» без даты в первый вход после
-  // недели открывает разбор, и вкладка возвращала бы в него, пока не нажато
-  // «Понятно». На сервере и при гидратации — «/».
-  const today = useSyncExternalStore(subscribeDay, () => localDate(), () => null);
   if (hiddenOn(pathname)) return null;
 
   return (
@@ -92,7 +77,7 @@ export function TabBar() {
           return (
             <Link
               key={t.href}
-              href={t.href === "/" && today ? `/?d=${today}` : t.href}
+              href={t.href}
               aria-current={on ? "page" : undefined}
               className={`flex min-w-0 flex-col items-center justify-center gap-0.5 text-[11px] font-semibold tracking-[0.01em] ${
                 on ? "text-accent" : "text-ink-3"

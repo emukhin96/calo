@@ -5,7 +5,7 @@
 import { and, asc, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { DEFAULT_TZ, MEAL_RU, MEAL_TIME, type Meal, todayIn, zonedParts, zonedTime } from "@/domain/day";
 import { formatTime, mealKey, mealKindOf, normalizeMealName, parseTime, PRESET_TIME, presetOf } from "@/domain/meals";
-import { type NutrientVector, NUTRIENT_KEYS, scale, sum } from "@/domain/nutrients";
+import { type NutrientVector, per100gOf, scale, sum } from "@/domain/nutrients";
 import type { DB } from ".";
 import { BadRequestError, NotFoundError } from "./errors";
 import {
@@ -81,6 +81,24 @@ export async function listEntries(c: Conn, ownerId: string, from: string, to: st
     .innerJoin(dayMeals, eq(dayMeals.id, entries.mealId))
     .where(and(eq(entries.ownerId, ownerId), gte(dayMeals.date, from), lte(dayMeals.date, to)))
     .orderBy(asc(dayMeals.date), asc(entries.eatenAt), asc(entries.createdAt));
+}
+
+/**
+ * Калории по местным дням from…to включительно (по дню приёма, как listEntries) —
+ * одним агрегатом, без самих записей: [{ date: "2026-09-28", kcal: 2310 }, …] по
+ * дням. Дней без записей нет; неизвестные ккал записи считаются за 0.
+ */
+export async function kcalByDay(c: Conn, ownerId: string, from: string, to: string): Promise<{ date: string; kcal: number }[]> {
+  return c
+    .select({
+      date: dayMeals.date,
+      kcal: sql`coalesce(sum((${entries.nutrients}->>'kcal')::float8), 0)`.mapWith(Number),
+    })
+    .from(entries)
+    .innerJoin(dayMeals, and(eq(dayMeals.id, entries.mealId), eq(dayMeals.ownerId, ownerId)))
+    .where(and(eq(entries.ownerId, ownerId), gte(dayMeals.date, from), lte(dayMeals.date, to)))
+    .groupBy(dayMeals.date)
+    .orderBy(asc(dayMeals.date));
 }
 
 /** День дневника: приёмы дня по порядку с записями и итогами (GET /api/entries, экран дня). */
@@ -267,7 +285,9 @@ export async function updateEntry(db: DB, ownerId: string, id: string, patch: En
 
     const grams = patch.grams ?? current.grams;
     const nutrients =
-      grams === current.grams || current.grams <= 0 ? current.nutrients : scale(per100gOf(current), grams);
+      grams === current.grams || current.grams <= 0
+        ? current.nutrients
+        : scale(per100gOf(current.nutrients, current.grams), grams);
 
     let target: DayMeal | null = null;
     const mealName = patch.mealId ? null : normalizeMealName(patch.mealName);
@@ -316,16 +336,6 @@ export async function updateEntry(db: DB, ownerId: string, id: string, patch: En
 async function mealSize(tx: Conn, mealId: string): Promise<number> {
   const [r] = await tx.select({ n: sql<number>`count(*)::int` }).from(entries).where(eq(entries.mealId, mealId));
   return Number(r?.n ?? 0);
-}
-
-function per100gOf(e: Entry): NutrientVector {
-  const out: NutrientVector = {};
-  for (const k of NUTRIENT_KEYS) {
-    const v = e.nutrients[k];
-    if (v != null) out[k] = (v * 100) / e.grams;
-    else if (k in e.nutrients) out[k] = null;
-  }
-  return out;
 }
 
 /** Удалить запись; опустевший приём удаляется следом. */

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type ReactNode, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { MEAL_NAME_MAX, MEAL_PLAN_MAX, normalizeMealName } from "@/domain/meals";
+import { clampMealName, MEAL_NAME_MAX, MEAL_PLAN_MAX, normalizeMealName } from "@/domain/meals";
 import { insertIndex, mealSuggestions, moveItem } from "./meal-plan";
 
 type MealSettings = { plan: string[]; showTimes: boolean };
@@ -167,10 +167,10 @@ export function MealPlanSection({ plan, showTimes: initialShowTimes }: MealSetti
                   ref={renameInput}
                   aria-label={`Название приёма: ${it.name}`}
                   value={renaming.value}
-                  maxLength={MEAL_NAME_MAX}
+                  maxLength={MEAL_NAME_MAX * 2}
                   autoComplete="off"
                   enterKeyHint="done"
-                  onChange={(e) => setRenaming({ id: it.id, value: e.target.value })}
+                  onChange={(e) => setRenaming({ id: it.id, value: clampMealName(e.target.value) })}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();
                     if (e.key === "Escape") {
@@ -252,11 +252,11 @@ export function MealPlanSection({ plan, showTimes: initialShowTimes }: MealSetti
             <input
               aria-label="Название нового приёма"
               value={draft}
-              maxLength={MEAL_NAME_MAX}
+              maxLength={MEAL_NAME_MAX * 2}
               placeholder="Название"
               autoComplete="off"
               enterKeyHint="done"
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => setDraft(clampMealName(e.target.value))}
               className="h-11 min-w-0 flex-1 rounded-xl border border-line bg-bg px-3.5 text-[17px] text-ink outline-none placeholder:text-ink-3/60 focus:border-accent"
             />
             <button

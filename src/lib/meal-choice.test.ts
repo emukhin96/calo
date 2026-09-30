@@ -5,7 +5,6 @@ import {
   defaultMealChoice,
   isMealChoiceValid,
   localClock,
-  localDate,
   mealChoiceBody,
   newMealChoice,
   newMealIndex,
@@ -263,13 +262,12 @@ describe("mealChoiceBody и проверка выбора", () => {
 });
 
 describe("мелочи", () => {
-  it("shortTime / nowTime / localDate / localClock", () => {
+  it("shortTime / nowTime / localClock", () => {
     expect(shortTime("08:30")).toBe("8:30");
     expect(shortTime("13:05")).toBe("13:05");
     expect(shortTime("00:00")).toBe("0:00");
     expect(nowTime(new Date(2026, 8, 29, 7, 5))).toBe("07:05");
     expect(nowTime(new Date(2026, 8, 29, 23, 59))).toBe("23:59");
-    expect(localDate(new Date(2026, 8, 9, 0, 5))).toBe("2026-09-09");
     expect(localClock(new Date(2026, 8, 29, 7, 5))).toEqual({ hour: 7, minute: 5 });
   });
 });
