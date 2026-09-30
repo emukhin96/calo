@@ -3,7 +3,7 @@
 // пересчитывается при каждом сохранении; прошлые записи дневника не меняются.
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Meal } from "@/domain/day";
-import type { NutrientVector } from "@/domain/nutrients";
+import { type NutrientVector, per100gOf } from "@/domain/nutrients";
 import { computeRecipe } from "@/domain/recipe";
 import type { DB } from ".";
 import { NotFoundError } from "./entries";
@@ -120,10 +120,10 @@ export async function saveComposite(db: DB, ownerId: string, input: CompositeInp
     .from(foods)
     .where(and(inArray(foods.id, ids), or(isNull(foods.ownerId), eq(foods.ownerId, ownerId))));
   if (found.length !== ids.length) throw new NotFoundError("food not found");
-  const per100gOf = new Map(found.map((f) => [f.id, f.per100g]));
+  const per100gById = new Map(found.map((f) => [f.id, f.per100g]));
 
   const r = computeRecipe(
-    input.ingredients.map((i) => ({ per100g: per100gOf.get(i.foodId)!, grams: i.grams })),
+    input.ingredients.map((i) => ({ per100g: per100gById.get(i.foodId)!, grams: i.grams })),
     { totalWeightG: input.totalWeightG, portions: input.portions },
   );
   const values = {
@@ -201,10 +201,7 @@ export async function templateFromEntry(db: DB, ownerId: string, entryId: string
   if (e.foodId) {
     return saveComposite(db, ownerId, { name: name ?? e.title, ingredients: [{ foodId: e.foodId, grams: e.grams }], portions: 1 });
   }
-  const per100g = Object.fromEntries(
-    Object.entries(e.nutrients).map(([k, v]) => [k, v == null ? null : (v * 100) / e.grams]),
-  ) as NutrientVector;
-  return saveTemplate(db, ownerId, { name: name ?? e.title, per100g, defaultPortionG: e.grams });
+  return saveTemplate(db, ownerId, { name: name ?? e.title, per100g: per100gOf(e.nutrients, e.grams), defaultPortionG: e.grams });
 }
 
 /** «Сохранить приём пищи как блюдо»: «мой обычный завтрак» — одной кнопкой в следующий раз. */

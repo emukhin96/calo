@@ -39,6 +39,22 @@ export function scale(per100g: NutrientVector, grams: number): NutrientVector {
 }
 
 /**
+ * Значения на 100 г из нутриентов порции — обратное к scale: снимок записи
+ * дневника пересчитывается на новые граммы (сервер при правке, лист правки на
+ * экране дня). «Нет данных» остаётся null; при grams <= 0 пересчитать не из чего —
+ * известные значения тоже null.
+ */
+export function per100gOf(portion: NutrientVector, grams: number): NutrientVector {
+  const out: NutrientVector = {};
+  for (const key of NUTRIENT_KEYS) {
+    const v = portion[key];
+    if (v != null && grams > 0) out[key] = (v * 100) / grams;
+    else if (key in portion) out[key] = null;
+  }
+  return out;
+}
+
+/**
  * Сумма векторов. Если хотя бы у одного слагаемого значение неизвестно,
  * сумма по этому ключу тоже неизвестна — иначе недобор витаминов оказался бы
  * мнимым. coverage показывает, у скольких слагаемых значение было.

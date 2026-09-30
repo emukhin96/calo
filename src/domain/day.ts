@@ -24,8 +24,12 @@ export function isValidTimeZone(tz: string | undefined | null): tz is string {
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-export const isIsoDate = (s: string | null | undefined): s is string =>
-  !!s && ISO_DATE.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+/** «2026-09-29»; несуществующий день («2026-02-30» — Date.parse перенёс бы его на март) — нет. */
+export const isIsoDate = (s: string | null | undefined): s is string => {
+  if (!s || !ISO_DATE.test(s)) return false;
+  const t = Date.parse(`${s}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s;
+};
 
 /** Местные дата и час момента времени в зоне tz. */
 export function zonedParts(at: Date, tz: string): { date: string; hour: number; minute: number } {

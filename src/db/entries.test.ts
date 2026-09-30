@@ -14,6 +14,7 @@ import {
   BadRequestError,
   createEntry,
   deleteEntry,
+  kcalByDay,
   listEntries,
   loadDayData,
   NotFoundError,
@@ -354,7 +355,40 @@ describe("перенос записи в другой приём", () => {
   });
 });
 
-describe("миграция 0006: приёмы дня из названий старых записей", () => {
+describe("калории по дням", () => {
+  it("сумма ккал по местным дням from…to включительно; только свои; дней без записей нет", async () => {
+    const [{ id: teaId }] = await db
+      .insert(foods)
+      .values({ ownerId: ME, nameRu: "Чай", source: "manual", nutrientsPer100g: { kcal: null, protein: 0 } })
+      .returning({ id: foods.id });
+    const put = (date: string, grams: number, foodId = tvorogId, owner = ME) =>
+      createEntry(db, owner, { foodId, grams, date, mealName: "Обед" }, ctx());
+    await put("2026-08-09", 100); // до диапазона
+    await put("2026-08-10", 100);
+    await put("2026-08-10", 200);
+    await put("2026-08-10", 250, teaId); // ккал неизвестны — за 0
+    await put("2026-08-12", 50);
+    await put("2026-08-13", 300, teaId); // день только с неизвестными ккал — 0, но он есть
+    await put("2026-08-16", 100); // последний день диапазона
+    await put("2026-08-17", 100); // после диапазона
+    await put("2026-08-11", 100, tvorogId, OTHER); // чужая запись
+    await db.insert(dayMeals).values({ ownerId: ME, date: "2026-08-14", name: "Ужин", position: 1 }); // пустой приём — дня нет
+
+    const kcal = async (owner: string, from: string, to: string) =>
+      (await kcalByDay(db, owner, from, to)).map((d) => [d.date, Math.round(d.kcal * 10) / 10]);
+    expect(await kcal(ME, "2026-08-10", "2026-08-16")).toEqual([
+      ["2026-08-10", 363],
+      ["2026-08-12", 60.5],
+      ["2026-08-13", 0],
+      ["2026-08-16", 121],
+    ]);
+    expect(await kcal(ME, "2026-08-12", "2026-08-12")).toEqual([["2026-08-12", 60.5]]);
+    expect(await kcal(OTHER, "2026-08-10", "2026-08-16")).toEqual([["2026-08-11", 121]]);
+    expect(await kcal(ME, "2026-08-01", "2026-08-08")).toEqual([]);
+  });
+});
+
+describe("миграция 0005: приёмы дня из вида старых записей", () => {
   const folder = path.resolve(__dirname, "../../drizzle");
   /** PGlite с миграциями до tag (не включая) — БД «как до обновления». */
   async function dbBefore(tag: string) {
@@ -377,54 +411,33 @@ describe("миграция 0006: приёмы дня из названий ст�
     };
   }
 
-  it("прод (до 0005): приёмы по виду старых записей", async () => {
+  it("один приём на (владелец, местный день, вид): название — по виду, порядок — по первой записи", async () => {
     const { client, upgrade, close } = await dbBefore("0005_");
-    try {
-      await client.exec(`
-        insert into "user" (id, name, email, email_verified, created_at, updated_at) values ('u', 'U', 'u@calo.test', false, now(), now());
-        insert into entries (owner_id, eaten_at, meal, input_method, title, grams, nutrients) values
-          ('u', '2026-09-29T05:00:00Z', 'breakfast', 'product', 'Каша', 200, '{}'),
-          ('u', '2026-09-29T10:00:00Z', 'lunch', 'product', 'Суп', 300, '{}'),
-          ('u', '2026-09-29T08:00:00Z', 'snack', 'product', 'Яблоко', 150, '{}'),
-          ('u', '2026-09-29T16:00:00Z', 'dinner', 'product', 'Рыба', 180, '{}'),
-          ('u', '2026-09-29T16:05:00Z', 'dinner', 'product', 'Салат', 100, '{}');
-      `);
-      await upgrade();
-      const { rows } = await client.query<{ name: string; position: number; n: number }>(
-        `select m.name, m.position, count(e.id)::int as n from day_meals m join entries e on e.meal_id = m.id
-         group by m.id order by m.position`,
-      );
-      expect(rows).toEqual([
-        { name: "Завтрак", position: 1, n: 1 },
-        { name: "Перекус", position: 2, n: 1 },
-        { name: "Обед", position: 3, n: 1 },
-        { name: "Ужин", position: 4, n: 2 },
-      ]);
-    } finally {
-      await close();
-    }
-  });
-
-  it("один приём на (владелец, местный день, название), порядок — по первой записи", async () => {
-    const { client, upgrade, close } = await dbBefore("0006_");
     try {
       await client.exec(`
         insert into "user" (id, name, email, email_verified, created_at, updated_at) values
           ('u', 'U', 'u@calo.test', false, now(), now()),
           ('v', 'V', 'v@calo.test', false, now(), now()),
-          ('w', 'W', 'w@calo.test', false, now(), now());
+          ('w', 'W', 'w@calo.test', false, now(), now()),
+          ('x', 'X', 'x@calo.test', false, now(), now());
         insert into profiles (owner_id, sex, birth_year, height_cm, activity, timezone) values
           ('v', 'male', 1990, 180, 'light', 'Asia/Yerevan'),
-          ('w', 'male', 1990, 180, 'light', 'Mars/Olympus');
-        insert into entries (owner_id, eaten_at, meal, meal_name, input_method, title, grams, nutrients) values
-          ('u', '2026-09-29T05:00:00Z', 'breakfast', 'Завтрак', 'product', 'Каша', 200, '{}'),
-          ('u', '2026-09-29T05:10:00Z', 'breakfast', 'Завтрак', 'product', 'Кофе', 200, '{}'),
-          ('u', '2026-09-29T08:00:00Z', 'snack', 'Перекус', 'product', 'Яблоко', 150, '{}'),
-          ('u', '2026-09-29T10:00:00Z', 'lunch', 'Обед', 'product', 'Суп', 300, '{}'),
-          ('u', '2026-09-29T13:30:00Z', 'snack', 'Перекус', 'product', 'Орехи', 30, '{}'),
-          ('u', '2026-09-28T20:30:00Z', 'dinner', 'Ужин', 'product', 'Рыба', 180, '{}'),
-          ('v', '2026-09-28T20:30:00Z', 'dinner', 'Ужин', 'product', 'Хачапури', 250, '{}'),
-          ('w', '2026-09-28T20:30:00Z', 'dinner', 'Ужин', 'product', 'Пельмени', 250, '{}');
+          ('w', 'male', 1990, 180, 'light', 'Mars/Olympus'),
+          ('x', 'female', 1990, 165, 'light', 'asia/tokyo');
+        insert into entries (owner_id, eaten_at, meal, input_method, title, grams, nutrients) values
+          ('u', '2026-09-29T05:00:00Z', 'breakfast', 'product', 'Каша', 200, '{}'),
+          ('u', '2026-09-29T05:10:00Z', 'breakfast', 'product', 'Кофе', 200, '{}'),
+          ('u', '2026-09-29T08:00:00Z', 'snack', 'product', 'Яблоко', 150, '{}'),
+          ('u', '2026-09-29T10:00:00Z', 'lunch', 'product', 'Суп', 300, '{}'),
+          ('u', '2026-09-29T13:30:00Z', 'snack', 'product', 'Орехи', 30, '{}'),
+          ('u', '2026-09-29T16:00:00Z', 'dinner', 'product', 'Рыба', 180, '{}'),
+          ('u', '2026-09-29T16:05:00Z', 'dinner', 'product', 'Салат', 100, '{}'),
+          ('u', '2026-09-28T20:30:00Z', 'dinner', 'product', 'Гречка', 180, '{}'),
+          ('v', '2026-09-28T20:30:00Z', 'dinner', 'product', 'Хачапури', 250, '{}'),
+          ('v', '2026-09-29T09:00:00Z', 'lunch', 'product', 'Долма', 250, '{}'),
+          ('w', '2026-09-28T20:30:00Z', 'dinner', 'product', 'Пельмени', 250, '{}'),
+          ('x', '2026-09-28T20:30:00Z', 'snack', 'product', 'Моти', 50, '{}'),
+          ('x', '2026-09-28T20:30:00Z', 'breakfast', 'product', 'Мисо', 200, '{}');
       `);
       await upgrade();
 
@@ -432,47 +445,59 @@ describe("миграция 0006: приёмы дня из названий ст�
         `select owner_id, to_char(date, 'YYYY-MM-DD') as date, name, position from day_meals order by owner_id, date, position`,
       );
       expect(meals).toEqual([
-        { owner_id: "u", date: "2026-09-28", name: "Ужин", position: 1 }, // 23:30 МСК — ещё 28-е
+        { owner_id: "u", date: "2026-09-28", name: "Ужин", position: 1 }, // 23:30 МСК — ещё 28-е (профиля нет — Москва)
         { owner_id: "u", date: "2026-09-29", name: "Завтрак", position: 1 },
-        { owner_id: "u", date: "2026-09-29", name: "Перекус", position: 2 },
+        { owner_id: "u", date: "2026-09-29", name: "Перекус", position: 2 }, // два перекуса дня — один приём
         { owner_id: "u", date: "2026-09-29", name: "Обед", position: 3 },
-        { owner_id: "v", date: "2026-09-29", name: "Ужин", position: 1 }, // 00:30 в Ереване — уже 29-е
+        { owner_id: "u", date: "2026-09-29", name: "Ужин", position: 4 },
+        { owner_id: "v", date: "2026-09-29", name: "Ужин", position: 1 }, // 00:30 в Ереване — уже 29-е, и раньше обеда
+        { owner_id: "v", date: "2026-09-29", name: "Обед", position: 2 },
         { owner_id: "w", date: "2026-09-28", name: "Ужин", position: 1 }, // неизвестный пояс — Москва
+        { owner_id: "x", date: "2026-09-29", name: "Завтрак", position: 1 }, // пояс без учёта регистра; одно время — по названию
+        { owner_id: "x", date: "2026-09-29", name: "Перекус", position: 2 },
       ]);
 
       const { rows } = await client.query<{ title: string; name: string; date: string }>(
         `select e.title, m.name, to_char(m.date, 'YYYY-MM-DD') as date
          from entries e join day_meals m on m.id = e.meal_id and m.owner_id = e.owner_id order by e.title`,
       );
-      expect(rows).toHaveLength(8);
+      expect(rows).toHaveLength(13);
       expect(Object.fromEntries(rows.map((r) => [r.title, `${r.date} ${r.name}`]))).toEqual({
         Каша: "2026-09-29 Завтрак",
         Кофе: "2026-09-29 Завтрак",
         Яблоко: "2026-09-29 Перекус",
         Орехи: "2026-09-29 Перекус",
         Суп: "2026-09-29 Обед",
-        Рыба: "2026-09-28 Ужин",
+        Рыба: "2026-09-29 Ужин",
+        Салат: "2026-09-29 Ужин",
+        Гречка: "2026-09-28 Ужин",
         Хачапури: "2026-09-29 Ужин",
+        Долма: "2026-09-29 Обед",
         Пельмени: "2026-09-28 Ужин",
+        Моти: "2026-09-29 Перекус",
+        Мисо: "2026-09-29 Завтрак",
       });
 
-      const { rows: cols } = await client.query<{ column_name: string }>(
-        `select column_name from information_schema.columns where table_name = 'entries' and column_name like 'meal%' order by 1`,
+      const { rows: cols } = await client.query<{ column_name: string; is_nullable: string }>(
+        `select column_name, is_nullable from information_schema.columns
+         where table_name = 'entries' and column_name like 'meal%' order by 1`,
       );
-      expect(cols.map((c) => c.column_name)).toEqual(["meal", "meal_id"]);
+      expect(cols).toEqual([
+        { column_name: "meal", is_nullable: "NO" },
+        { column_name: "meal_id", is_nullable: "NO" },
+      ]);
       const { rows: prof } = await client.query<{ meal_plan: string[]; show_meal_times: boolean }>(
         `select meal_plan, show_meal_times from profiles order by owner_id`,
       );
-      expect(prof).toEqual([
-        { meal_plan: ["Завтрак", "Обед", "Перекус", "Ужин"], show_meal_times: false },
-        { meal_plan: ["Завтрак", "Обед", "Перекус", "Ужин"], show_meal_times: false },
-      ]);
+      expect(prof).toEqual(
+        Array(3).fill({ meal_plan: ["Завтрак", "Обед", "Перекус", "Ужин"], show_meal_times: false }),
+      );
       await expect(
         client.query(`insert into entries (owner_id, eaten_at, meal, input_method, title, grams, nutrients) values ('u', now(), 'snack', 'product', 'x', 1, '{}')`),
       ).rejects.toThrow(/meal_id/);
       // приём удаляется — его записи следом
-      await client.query(`delete from day_meals where owner_id = 'u' and name = 'Перекус'`);
-      expect((await client.query(`select 1 from entries where owner_id = 'u'`)).rows).toHaveLength(4);
+      await client.query(`delete from day_meals where owner_id = 'u' and date = '2026-09-29' and name = 'Перекус'`);
+      expect((await client.query(`select 1 from entries where owner_id = 'u'`)).rows).toHaveLength(6);
     } finally {
       await close();
     }

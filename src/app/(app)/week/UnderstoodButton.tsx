@@ -1,36 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import { Button } from "@/ui/components";
 
-function markSeen(weekStart: string) {
-  return fetch("/api/week/seen", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ weekStart }),
-  }).catch(() => {});
-}
-
 /**
- * «Понятно» под разбором, который открылся сам. Разбор считается просмотренным,
- * как только он на экране: уйти можно и вкладкой, а не только этой кнопкой, —
- * иначе он открывался бы при каждом запуске. Кнопка — назад к дневнику.
+ * «Понятно» под разбором, который открылся сам, — назад к дневнику. Просмотренным
+ * разбор отмечает сама страница (week/page.tsx), ещё до показа: уйти можно и
+ * вкладкой, а не только этой кнопкой.
  */
-export function UnderstoodButton({ weekStart }: { weekStart: string }) {
+export function UnderstoodButton() {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    void markSeen(weekStart);
-  }, [weekStart]);
-
   return (
     <Button
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true);
-        await markSeen(weekStart); // вдруг первый запрос не дошёл
+      onClick={() => {
         router.replace("/");
         router.refresh();
       }}

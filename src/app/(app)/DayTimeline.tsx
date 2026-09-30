@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import type { DayMealView, Entry } from "@/db/entries";
 import { formatTime, mealLabels } from "@/domain/meals";
-import { NUTRIENT_KEYS, type NutrientVector } from "@/domain/nutrients";
+import { per100gOf } from "@/domain/nutrients";
 import { addHref } from "@/lib/diary-view";
 import { type DayMeal, type MealChoice, mealChoiceBody, shortTime } from "@/lib/meal-choice";
 import { health, notifyChanged } from "@/lib/native";
@@ -18,16 +18,6 @@ import { MealSheet } from "./MealSheet";
 const gramsLabel = (g: number) => (Number.isInteger(Math.round(g * 10) / 10) ? formatInt(g) : formatGrams(g));
 
 const JSON_HEADERS = { "content-type": "application/json" };
-
-/** Значения на 100 г из снимка записи — чтобы лист правки пересчитывал граммы. */
-function per100g(e: Entry): NutrientVector {
-  const out: NutrientVector = {};
-  for (const k of NUTRIENT_KEYS) {
-    const v = e.nutrients[k];
-    if (v != null && e.grams > 0) out[k] = (v * 100) / e.grams;
-  }
-  return out;
-}
 
 /**
  * Лента дня: приёмы пищи в порядке дня — название (повтор с номером:
@@ -194,7 +184,8 @@ export function DayTimeline({
         <PortionSheet
           key={editing.id}
           title={editing.title}
-          per100g={per100g(editing)}
+          // Значения на 100 г из снимка записи — лист пересчитывает граммы, как сервер при правке.
+          per100g={per100gOf(editing.nutrients, editing.grams)}
           initialGrams={editing.grams}
           meals={choices}
           plan={plan}

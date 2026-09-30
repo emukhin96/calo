@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coverage, isLabelConsistent, scale, sum } from "./nutrients";
+import { coverage, isLabelConsistent, per100gOf, scale, sum } from "./nutrients";
 
 describe("scale", () => {
   it("пересчитывает на 100 г в порцию", () => {
@@ -8,6 +8,31 @@ describe("scale", () => {
 
   it("сохраняет «нет данных» как null", () => {
     expect(scale({ kcal: 100, vitD: null }, 200)).toEqual({ kcal: 200, vitD: null });
+  });
+});
+
+describe("per100gOf", () => {
+  it("снимок порции — обратно на 100 г", () => {
+    expect(per100gOf({ kcal: 242, protein: 32 }, 200)).toEqual({ kcal: 121, protein: 16 });
+    expect(per100gOf({ kcal: 0 }, 50)).toEqual({ kcal: 0 });
+  });
+
+  it("обратное к scale: пересчёт на новые граммы", () => {
+    const portion = scale({ kcal: 121, fat: 5, vitC: 0.5 }, 180);
+    const again = scale(per100gOf(portion, 180), 50);
+    expect(again.kcal).toBeCloseTo(60.5);
+    expect(again.fat).toBeCloseTo(2.5);
+    expect(again.vitC).toBeCloseTo(0.25);
+  });
+
+  it("«нет данных» остаётся null, отсутствующие ключи не появляются", () => {
+    expect(per100gOf({ kcal: 100, vitD: null }, 200)).toEqual({ kcal: 50, vitD: null });
+    expect(per100gOf({}, 100)).toEqual({});
+  });
+
+  it("граммы <= 0: пересчитать не из чего — известные значения тоже null", () => {
+    expect(per100gOf({ kcal: 100, protein: 5, vitD: null }, 0)).toEqual({ kcal: null, protein: null, vitD: null });
+    expect(per100gOf({ kcal: 100 }, -10)).toEqual({ kcal: null });
   });
 });
 

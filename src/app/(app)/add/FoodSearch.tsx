@@ -251,8 +251,9 @@ export function FoodSearch({
     setOffState(res?.ok ? "idle" : "error");
   }
 
+  /** Выбранный товар OFF — в справочник и в лист порции; source=off — без подмены своим продуктом. */
   async function pickOff(item: OffItem) {
-    const res = await fetch(`/api/foods/barcode/${item.code}`).catch(() => null);
+    const res = await fetch(`/api/foods/barcode/${item.code}?source=off`).catch(() => null);
     if (!res?.ok) return;
     const saved = (await res.json()) as FoodResult;
     setItems((prev) => [saved, ...prev.filter((f) => f.id !== saved.id)]);

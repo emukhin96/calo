@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { MEAL_NAME_MAX, mealKey, planNames } from "@/domain/meals";
+import { clampMealName, MEAL_NAME_MAX, mealKey, planNames } from "@/domain/meals";
 import {
   type DayMeal,
   type MealChoice,
@@ -176,14 +176,15 @@ export function MealPicker({
                   ref={nameInput}
                   aria-label="Своё название приёма"
                   value={newName}
-                  maxLength={MEAL_NAME_MAX}
+                  maxLength={MEAL_NAME_MAX * 2}
                   placeholder="Название приёма"
                   autoComplete="off"
                   enterKeyHint="done"
                   onChange={(e) => {
-                    setCustomName(e.target.value);
+                    const name = clampMealName(e.target.value);
+                    setCustomName(name);
                     setCustom(true); // стёрли название из ссылки — поле не пропадает
-                    emitNew(newMealChoice(meals, e.target.value, newTime));
+                    emitNew(newMealChoice(meals, name, newTime));
                   }}
                   onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                   className="h-11 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3.5 text-[17px] text-ink outline-none placeholder:text-ink-3/60 focus:border-accent"

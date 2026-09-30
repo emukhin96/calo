@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
-import { isIsoDate, todayIn } from "@/domain/day";
+import { todayIn } from "@/domain/day";
 import { loadDay } from "@/lib/diary";
+import { diaryDateOf } from "@/lib/diary-date";
 import { loadUser } from "@/lib/norms";
 import { shouldShowWeek } from "@/lib/week";
 import { loadWeekKcal } from "@/lib/week-strip";
@@ -22,9 +23,10 @@ export default async function DayPage({ searchParams }: PageProps<"/">) {
   const sp = await searchParams;
   const today = todayIn(tz);
   // Первый вход после окончания недели — сначала разбор (как лист со скриншота).
-  // Вкладка «Дневник» ведёт на /?d=… — из разбора она сюда не возвращает.
+  // Открывшийся разбор сразу отмечается просмотренным (week/page.tsx), так что
+  // вкладка «Дневник» (/) из него сюда уже не возвращает.
   if (sp.d == null && (await shouldShowWeek(session.user.id, tz))) redirect("/week");
-  const date = typeof sp.d === "string" && isIsoDate(sp.d) && sp.d <= today ? sp.d : today;
+  const date = diaryDateOf(sp.d, today);
   const [day, weekKcal] = await Promise.all([loadDay(session.user.id, date, tz), loadWeekKcal(session.user.id, date)]);
 
   return (

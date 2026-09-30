@@ -61,11 +61,6 @@ export function nowTime(now: Date = new Date()): string {
   return hhmm(now.getHours(), now.getMinutes());
 }
 
-/** Местная дата телефона «YYYY-MM-DD» — сравнить с днём дневника (isToday). */
-export function localDate(now: Date = new Date()): string {
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
 /** Местные часы и минуты телефона. */
 export function localClock(now: Date = new Date()): { hour: number; minute: number } {
   return { hour: now.getHours(), minute: now.getMinutes() };

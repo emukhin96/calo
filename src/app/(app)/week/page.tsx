@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { addDays, isIsoDate, todayIn, weekStart, weekTitle } from "@/domain/day";
 import { requireSession } from "@/lib/session";
 import { userTimeZone } from "@/lib/tz";
-import { lastCompleteWeek, loadWeekReport } from "@/lib/week";
+import { lastCompleteWeek, loadWeekReport, markWeekSeen } from "@/lib/week";
 import { BigNumber, Eyebrow, MarkList, SectionTitle, Sheet } from "@/ui/components";
 import { formatInt, plural } from "@/ui/format";
 import { UnderstoodButton } from "./UnderstoodButton";
@@ -22,9 +22,16 @@ export default async function WeekPage({ searchParams }: PageProps<"/week">) {
   const r = data.report;
   const inProgress = monday === current;
   const label = inProgress ? "Эта неделя · идёт" : monday === latest ? "Неделя позади" : weekTitle(monday);
-  // «Понятно» — только у разбора, который открылся сам (прошлая неделя, ещё не просмотрен;
-  // кнопка же и отмечает его просмотренным): в остальных случаях уйти можно вкладками.
-  const footer = monday === latest && !data.seen ? <UnderstoodButton weekStart={monday} /> : undefined;
+  // Прошлая неделя, ещё не просмотрена — этот разбор открывается сам (/ → /week).
+  // Просмотренным он отмечается здесь, до ответа, а не с клиента после загрузки:
+  // иначе вкладка «Дневник», нажатая сразу, могла опередить отметку, и / снова
+  // перенаправил бы сюда. Link динамическую страницу не предзагружает (самое
+  // большее — до loading.js), так что отметка ставится, только когда разбор
+  // действительно открыли; prefetch={true} на ссылки сюда не ставить.
+  const unseen = monday === latest && !data.seen;
+  if (unseen) await markWeekSeen(session.user.id, monday);
+  // «Понятно» — только у такого разбора: в остальных случаях уйти можно вкладками.
+  const footer = unseen ? <UnderstoodButton /> : undefined;
 
   return (
     <Sheet tabBar footer={footer}>

@@ -388,9 +388,12 @@ function IngredientSearch({
     setOff({ q: q0, items: data.items ?? [], state: res?.ok ? "done" : "error" });
   }
 
-  /** Товар OFF сохраняется в справочник (как во вкладке «Продукт») и сразу выбирается. */
+  /**
+   * Товар OFF сохраняется в справочник (как во вкладке «Продукт») и сразу выбирается.
+   * source=off — именно этот товар, даже если есть свой продукт с тем же штрихкодом.
+   */
   async function pickOff(item: OffItem) {
-    const res = await fetch(`/api/foods/barcode/${item.code}`).catch(() => null);
+    const res = await fetch(`/api/foods/barcode/${item.code}?source=off`).catch(() => null);
     if (!res?.ok) {
       setMsg({ text: "Не получилось загрузить товар из Open Food Facts — попробуйте ещё раз." });
       return;
