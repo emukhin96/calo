@@ -69,6 +69,101 @@ describe("searchFoods на справочнике", () => {
   });
 });
 
+// Жалобы из записей экрана: «паста» находила пастернак и пастрому, «творожный сыр» — глазированный сырок и тофу.
+describe("целое слово выше начала другого слова", () => {
+  it("«паста», «пасты» — макароны и спагетти, пастернака и пастромы нет даже в первой десятке", async () => {
+    for (const q of ["паста", "пасты"]) {
+      const found = await searchFoods(db, OWNER, q);
+      expect(names(found, 3).every((n) => /^(макароны|спагетти)/.test(n)), q).toBe(true);
+      expect(names(found, 10).some((n) => /пастернак|пастрома/.test(n)), q).toBe(false);
+      expect(found[0].match).toBe("exact");
+    }
+  });
+
+  it("«сухой пасты» — сухие макароны первыми", async () => {
+    expect((await searchFoods(db, OWNER, "сухой пасты"))[0].nameRu).toBe("Макароны, сухие");
+  });
+
+  it("вид из подсказки: паста raw → сухие, cooked → варёные", async () => {
+    expect((await searchFoods(db, OWNER, "паста", 3, { state: "raw" }))[0].nameRu).toBe("Макароны, сухие");
+    expect((await searchFoods(db, OWNER, "паста", 3, { state: "cooked" }))[0].nameRu).toMatch(/^Макароны, варёные/);
+  });
+
+  it("вид выбирает вариант продукта, а не подменяет продукт", async () => {
+    // «Колбаса говяжья, жареная» с синонимом «сосиски» — готовая, но не сосиски
+    expect(names(await searchFoods(db, OWNER, "сосиски", 3, { state: "cooked" }), 3).every((n) => n.startsWith("сосиски"))).toBe(true);
+    // сушёные яблоки у USDA «uncooked», но это не свежие яблоки
+    expect((await searchFoods(db, OWNER, "яблоко", 3, { state: "raw" }))[0].nameRu).toMatch(/^Яблоки, сырые/);
+    expect((await searchFoods(db, OWNER, "морковь", 3, { state: "raw" }))[0].nameRu).toBe("Морковь сырая");
+  });
+
+  it("текст в скобках и общие синонимы не перебивают сам продукт: «мясо», «масло», «жир», «соус»", async () => {
+    expect(names(await searchFoods(db, OWNER, "мясо"), 10).some((n) => n.includes("без мяса"))).toBe(false);
+    expect(names(await searchFoods(db, OWNER, "масло"), 3).every((n) => n.startsWith("масло"))).toBe(true);
+    expect(names(await searchFoods(db, OWNER, "жир"), 1)[0]).not.toMatch(/без жира/);
+    expect(names(await searchFoods(db, OWNER, "соус"), 3).every((n) => n.startsWith("соус"))).toBe(true);
+  });
+
+  it("«творожный сыр» в любом порядке и падеже — сливочный сыр (крем-чиз), сырок ниже всех его вариантов", async () => {
+    for (const q of ["творожный сыр", "сыр творожный", "творожного сыра"]) {
+      const all = names(await searchFoods(db, OWNER, q), 30);
+      expect(all[0], q).toMatch(/^сыр сливочный \(крем-чиз\)/);
+      const syrok = all.findIndex((n) => n.startsWith("сырок"));
+      const lastCream = all.findLastIndex((n) => n.startsWith("сыр сливочный"));
+      expect(syrok === -1 || syrok > lastCream, q).toBe(true);
+    }
+  });
+
+  it("«сливочный сыр», «крем-чиз», «филадельфия» — тоже крем-чиз", async () => {
+    for (const q of ["сливочный сыр", "крем-чиз", "филадельфия"]) {
+      expect(names(await searchFoods(db, OWNER, q), 1)[0], q).toMatch(/^сыр сливочный/);
+    }
+  });
+
+  it("«сыр» — сыры, а не сырые продукты, сырники и сырки", async () => {
+    expect(names(await searchFoods(db, OWNER, "сыр"), 10).every((n) => /^сыр /.test(n))).toBe(true);
+  });
+
+  it("только начало слова — ранжирование по-прежнему работает, пока слово не допечатано", async () => {
+    expect(names(await searchFoods(db, OWNER, "парм"), 1)[0]).toContain("пармезан");
+    expect((await searchFoods(db, OWNER, "парм"))[0].match).toBe("partial");
+  });
+});
+
+// Частые русские названия: первым — сам продукт, а не что-то с этим словом.
+describe("частые продукты", () => {
+  it.each([
+    ["макароны", /^макароны/],
+    ["спагетти", /^спагетти/],
+    ["творог", /^творог [59]%$/],
+    ["сметана", /^сметана/],
+    ["кефир", /^кефир/],
+    ["йогурт греческий", /^йогурт греческий натуральный/],
+    ["греческий йогурт", /^йогурт греческий натуральный/],
+    ["гречка", /^гречка/],
+    ["овсянка", /^(овсяные хлопья|овсяная крупа)/],
+    ["сыр гауда", /^сыр гауда$/],
+    ["моцарелла", /^сыр моцарелла/],
+    ["курица", /^курица/],
+    ["куриная грудка", /^куриная грудка/],
+    ["рис", /^рис /],
+    ["хлеб", /^хлеб (белый|пшеничный|ржаной)$/],
+    ["молоко", /^молоко (?!сухое)/],
+    ["яйцо", /^яйцо куриное, целое/],
+    ["пармезан", /^сыр пармезан/],
+  ])("«%s» → %s", async (q, expected) => {
+    expect(names(await searchFoods(db, OWNER, q), 1)[0]).toMatch(expected);
+  });
+
+  it("«гречка», «рис» — первая тройка без хлебцев и крекеров; «молоко» — без сухого", async () => {
+    expect(names(await searchFoods(db, OWNER, "гречка"), 3).every((n) => n.startsWith("гречка"))).toBe(true);
+    expect(names(await searchFoods(db, OWNER, "рис"), 3).every((n) => n.startsWith("рис "))).toBe(true);
+    expect(names(await searchFoods(db, OWNER, "молоко"), 5).some((n) => n.includes("сухое"))).toBe(false);
+    // …а «сухое молоко» — именно сухое
+    expect(names(await searchFoods(db, OWNER, "сухое молоко"), 1)[0]).toMatch(/^молоко сухое/);
+  });
+});
+
 describe("ранжирование", () => {
   it("то, что уже ели, поднимается наверх", async () => {
     const before = await searchFoods(db, OWNER, "куриная грудка");
@@ -82,6 +177,22 @@ describe("ранжирование", () => {
       title: pick.nameRu, foodId: pick.id, grams: 150, nutrients: {},
     });
     expect((await searchFoods(db, OWNER, "куриная грудка"))[0].id).toBe(pick.id);
+  });
+
+  it("съеденное не перебивает противоположный вид: ел варёные макароны, а пишет «сухой пасты»", async () => {
+    const EATER = "eater";
+    await db.insert(user).values({ id: EATER, name: "Eater", email: "e@calo.test" });
+    const cooked = (await searchFoods(db, EATER, "паста", 10)).find((f) => f.nameRu.startsWith("Макароны, варёные"))!;
+    const [dinner] = await db
+      .insert(dayMeals)
+      .values({ ownerId: EATER, date: "2026-09-29", name: "Ужин", position: 1 })
+      .returning({ id: dayMeals.id });
+    await db.insert(entries).values({
+      ownerId: EATER, mealId: dinner.id, eatenAt: new Date(), meal: "dinner", inputMethod: "product",
+      title: cooked.nameRu, foodId: cooked.id, grams: 200, nutrients: {},
+    });
+    expect((await searchFoods(db, EATER, "паста"))[0].id).toBe(cooked.id);
+    expect((await searchFoods(db, EATER, "паста", 3, { state: "raw" }))[0].nameRu).toBe("Макароны, сухие");
   });
 
   it("яйцо: у продукта есть вес штуки из USDA", async () => {

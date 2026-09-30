@@ -24,6 +24,29 @@ describe("parseFoodText", () => {
     ]);
   });
 
+  it("английское название — необязательное: старые ответы без него проходят, лишнее обрезается", async () => {
+    const base = { brand: "", grams: 100, state: "raw", confidence: 1, sourceText: "" };
+    const items = await parseFoodText(
+      "x",
+      fake({
+        items: [
+          { ...base, name: "паста", nameEn: " pasta, dry " },
+          { ...base, name: "сливки 20%" },
+          { ...base, name: "сыр", nameEn: "x".repeat(200) },
+          { ...base, name: "мёд", nameEn: null },
+        ],
+      }),
+    );
+    expect(items.map((i) => i.nameEn)).toEqual(["pasta, dry", "", "x".repeat(80), ""]);
+  });
+
+  it("схема просит у ИИ английское название, промпт объясняет зачем", () => {
+    const item = (AI_RESULT_SCHEMA.properties as { items: { items: { properties: object; required: string[] } } }).items.items;
+    expect(item.properties).toHaveProperty("nameEn");
+    expect(item.required).toContain("nameEn");
+    expect(SYSTEM_PROMPT).toMatch(/nameEn/);
+  });
+
   it("отклоняет ответ не по схеме", async () => {
     await expect(parseFoodText("x", fake({ items: [{ name: "паста" }] }))).rejects.toBeInstanceOf(AiError);
     await expect(parseFoodText("x", fake({ items: [{ name: "паста", brand: "", grams: 0, state: "raw", confidence: 1, sourceText: "" }] }))).rejects.toMatchObject({ kind: "bad_response" });

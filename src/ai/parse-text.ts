@@ -8,6 +8,15 @@ import { AiError } from "./gemini";
 export const AiItem = z.object({
   /** Обобщённое название в именительном падеже, как в справочнике: «сливки 20%», «пармезан». */
   name: z.string().trim().min(1).max(80),
+  /**
+   * То же название по-английски, как в USDA: «pasta, dry», «cream cheese». Запасной
+   * запрос к справочнику (src/ai/match.ts). Необязательное: старые ответы без него
+   * проходят, лишнее обрезается — из-за подсказки разбор не должен падать.
+   */
+  nameEn: z
+    .string()
+    .nullish()
+    .transform((s) => (s ?? "").trim().slice(0, 80)),
   /** Бренд отдельно, если назван; иначе пустая строка. */
   brand: z.string().trim().max(60),
   grams: z.number().min(1).max(5000),
@@ -33,13 +42,14 @@ export const AI_RESULT_SCHEMA: JsonSchema = {
         type: "object",
         properties: {
           name: { type: "string", description: "название продукта в именительном падеже, обобщённо, без бренда" },
+          nameEn: { type: "string", description: "то же название по-английски, как в базе USDA: «pasta, dry», «cream cheese»" },
           brand: { type: "string", description: "бренд или пустая строка" },
           grams: { type: "number", description: "вес в граммах (мл считать граммами)" },
           state: { type: "string", enum: ["raw", "cooked", "unknown"] },
           confidence: { type: "number", description: "уверенность в весе от 0 до 1" },
           sourceText: { type: "string", description: "фрагмент исходного текста этой позиции" },
         },
-        required: ["name", "brand", "grams", "state", "confidence", "sourceText"],
+        required: ["name", "nameEn", "brand", "grams", "state", "confidence", "sourceText"],
       },
     },
   },
@@ -55,6 +65,8 @@ export const SYSTEM_PROMPT = `Ты разбираешь описание съе�
 2. name — обобщённое название в именительном падеже единственного числа, как в справочнике продуктов:
    «сливки 20%», «творог 5%», «пармезан», «куриная грудка», «паста», «гречка», «яйцо куриное», «хлеб ржаной».
    Жирность и сорт оставляй в названии. Бренд («Простоквашино», «Rummo») — в поле brand, не в name.
+   nameEn — то же по-английски, коротко, как в базе USDA, с видом, если он ясен: «pasta, dry», «cream cheese»,
+   «buckwheat groats, cooked», «chicken breast, roasted», «cottage cheese» (для творога), «sour cream».
 3. grams — вес в граммах. Миллилитры считай граммами. Переводи бытовые меры:
    стакан 250, кружка 300, чайная ложка 5, столовая ложка 15 (масло 17, мёд 20), ломтик хлеба 30, яйцо 55,
    банан 120, яблоко 180, апельсин 150, помидор 120, огурец 100, картофелина 100, куриная грудка 200,
