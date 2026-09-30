@@ -17,7 +17,7 @@ import { DayView } from "./DayView";
  */
 export default async function DayPage({ searchParams }: PageProps<"/">) {
   const session = await requireSession();
-  const { norms, mealPlan, showMealTimes } = await loadUser(session.user.id);
+  const { norms, mealPlan, mealItems, showMealTimes } = await loadUser(session.user.id);
   if (!norms) redirect("/onboarding");
   const tz = await userTimeZone(session.user.id);
   const sp = await searchParams;
@@ -38,6 +38,7 @@ export default async function DayPage({ searchParams }: PageProps<"/">) {
       totals={day.totals}
       meals={day.meals}
       plan={mealPlan}
+      order={mealItems.map((i) => i.name)}
       showTimes={showMealTimes}
       weekKcal={weekKcal}
     />

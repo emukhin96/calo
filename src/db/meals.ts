@@ -1,12 +1,13 @@
 // Приёмы пищи дня (day_meals): название и порядок в дне, записи дневника
 // принадлежат приёму. Новый приём встаёт по списку пользователя из Профиля
-// (domain/meals.ts placeNewMeal), внутри дня его можно передвинуть выше/ниже.
+// (domain/meals.ts placeNewMeal; «Перекус» — в конец дня), внутри дня приёмы
+// можно переставить (перетаскиванием — reorderDayMeals, выше/ниже — updateDayMeal).
 // Пустых приёмов не бывает: приём удаляется вместе с последней записью.
 import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
 import type { NodePgQueryResultHKT } from "drizzle-orm/node-postgres";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import { type Meal, todayIn, zonedParts, zonedTime } from "@/domain/day";
-import { defaultMealTarget, mealKey, mealKindOf, normalizeMealName, parseTime, placeNewMeal } from "@/domain/meals";
+import { defaultMealTarget, mealKindOf, mealToJoin, normalizeMealName, parseTime, placeNewMeal } from "@/domain/meals";
 import type { DB } from ".";
 import { BadRequestError, NotFoundError } from "./errors";
 import { getMealSettings } from "./profile";
@@ -68,7 +69,7 @@ async function renumber(tx: Conn, day: DayMeal[]): Promise<DayMeal[]> {
   return out;
 }
 
-/** Новый приём дня на место по списку пользователя. */
+/** Новый приём дня на место по списку пользователя (весь список, со скрытыми; «Перекус» — в конец). */
 export async function insertDayMeal(
   tx: Conn,
   ownerId: string,
@@ -88,7 +89,9 @@ export async function insertDayMeal(
 
 /**
  * Приём по названию в день date: newMeal — всегда новый, иначе приём дня с
- * тем же названием (из нескольких — последний), а нет такого — новый.
+ * тем же названием (из нескольких — последний; «Перекус» — только если он
+ * последний в дне, domain/meals.ts mealToJoin), а нет такого — новый.
+ * order — весь список пользователя (со скрытыми): по нему встаёт новый приём.
  */
 export async function mealByName(
   tx: Conn,
@@ -96,24 +99,26 @@ export async function mealByName(
   date: string,
   name: string,
   newMeal: boolean,
-  plan: readonly string[],
+  order: readonly string[],
 ): Promise<DayMeal> {
   if (!newMeal) {
-    const hit = (await listDayMeals(tx, ownerId, date)).findLast((m) => mealKey(m.name) === mealKey(name));
+    const hit = mealToJoin(await listDayMeals(tx, ownerId, date), name);
     if (hit) return hit;
   }
-  return insertDayMeal(tx, ownerId, date, name, plan);
+  return insertDayMeal(tx, ownerId, date, name, order);
 }
 
 /**
  * Приём по умолчанию, когда клиент его не указал (виджет, старые клиенты):
  * domain/meals.ts defaultMealTarget на момент at — уже начатый приём или новый.
+ * plan — предлагаемые приёмы (без скрытых), order — весь список: по нему
+ * встаёт новый приём (по умолчанию — plan).
  */
 export async function defaultDayMeal(
   tx: Conn,
   ownerId: string,
   date: string,
-  ctx: { plan: readonly string[]; tz: string; at: Date },
+  ctx: { plan: readonly string[]; order?: readonly string[]; tz: string; at: Date },
 ): Promise<DayMeal> {
   const rows = await tx
     .select({ ...mealColumns, lastAt: sql`max(${entries.eatenAt})`.mapWith(entries.eatenAt) })
@@ -133,7 +138,7 @@ export async function defaultDayMeal(
     const hit = rows.find((m) => m.id === target.mealId)!;
     return { id: hit.id, date: hit.date, name: hit.name, position: hit.position };
   }
-  return insertDayMeal(tx, ownerId, date, target.name, ctx.plan);
+  return insertDayMeal(tx, ownerId, date, target.name, ctx.order ?? ctx.plan);
 }
 
 /** Удалить приём, если в нём не осталось записей. */
@@ -201,6 +206,51 @@ export async function updateDayMeal(
   });
 }
 
+/** Порядок приёмов дня (PUT /api/meals/order) не совпал с приёмами дня на сервере; current — как они стоят сейчас. */
+export class MealOrderConflictError extends Error {
+  readonly current: Pick<DayMeal, "id" | "name" | "position">[];
+  constructor(current: Pick<DayMeal, "id" | "name" | "position">[]) {
+    super("meal order conflict");
+    this.current = current;
+  }
+}
+
+/**
+ * Новый порядок приёмов дня (перетаскивание в дневнике, PUT /api/meals/order):
+ * ids — все приёмы владельца в день date, каждый ровно один раз, в нужном
+ * порядке; позиции становятся 1…n. Другой набор (приём добавили или удалили,
+ * пока экран был открыт; чужой приём; повтор) — MealOrderConflictError с
+ * порядком, как он есть, — клиент обновит экран. Повтор того же порядка
+ * ничего не меняет. Возвращает приёмы дня по новому порядку.
+ */
+export async function reorderDayMeals(
+  db: DB,
+  ownerId: string,
+  date: string,
+  ids: readonly string[],
+): Promise<Pick<DayMeal, "id" | "name" | "position">[]> {
+  return db.transaction(async (tx) => {
+    await lockMeals(tx, ownerId);
+    const day = await listDayMeals(tx, ownerId, date);
+    const byId = new Map(day.map((m) => [m.id, m]));
+    if (ids.length !== day.length || new Set(ids).size !== ids.length || !ids.every((id) => byId.has(id))) {
+      throw new MealOrderConflictError(day.map(({ id, name, position }) => ({ id, name, position })));
+    }
+    const out: Pick<DayMeal, "id" | "name" | "position">[] = [];
+    for (const [i, id] of ids.entries()) {
+      const m = byId.get(id)!;
+      if (m.position !== i + 1) {
+        await tx
+          .update(dayMeals)
+          .set({ position: i + 1 })
+          .where(and(eq(dayMeals.id, id), eq(dayMeals.ownerId, ownerId)));
+      }
+      out.push({ id, name: m.name, position: i + 1 });
+    }
+    return out;
+  });
+}
+
 /** Удалить приём вместе с записями (DELETE /api/meals/:id). Возвращает id удалённых записей. */
 export async function deleteDayMeal(db: DB, ownerId: string, id: string): Promise<string[]> {
   return db.transaction(async (tx) => {
@@ -216,7 +266,12 @@ export async function deleteDayMeal(db: DB, ownerId: string, id: string): Promis
   });
 }
 
-/** Список приёмов пользователя — для размещения новых приёмов. */
-export async function mealPlanOf(c: Conn, ownerId: string): Promise<string[]> {
-  return (await getMealSettings(c, ownerId)).plan;
+/**
+ * Список приёмов пользователя: order — весь по порядку, со скрытыми (по нему
+ * встают новые приёмы дня), visible — предлагаемые приёмы, без скрытых (приём
+ * по умолчанию, defaultDayMeal).
+ */
+export async function mealPlanOf(c: Conn, ownerId: string): Promise<{ order: string[]; visible: string[] }> {
+  const { plan, items } = await getMealSettings(c, ownerId);
+  return { order: items.map((i) => i.name), visible: plan };
 }

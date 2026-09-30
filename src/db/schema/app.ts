@@ -64,7 +64,7 @@ export const foods = pgTable(
   ],
 );
 
-/** Мои блюда: шаблоны с фиксированным КБЖУ и составные рецепты. */
+/** «Блюда»: шаблоны с фиксированным КБЖУ и составные рецепты. */
 export const recipes = pgTable(
   "recipes",
   {
@@ -121,7 +121,7 @@ export const dayMeals = pgTable(
  * Дневник. nutrients — снимок на момент записи: правка продукта не меняет историю.
  * Запись принадлежит приёму пищи дня (meal_id); местный день eaten_at совпадает
  * с днём приёма. meal — вид приёма (завтрак/обед/…), пересчитывается по
- * названию приёма и часу (domain/meals.ts mealKindOf): по нему «Мои блюда»
+ * названию приёма и часу (domain/meals.ts mealKindOf): по нему «Блюда»
  * ранжируются под приём.
  */
 export const entries = pgTable(
@@ -158,8 +158,16 @@ export const profiles = pgTable("profiles", {
   heightCm: real("height_cm").notNull(),
   activity: activity("activity").notNull(),
   timezone: text("timezone").notNull().default("Europe/Moscow"),
-  /** Свой порядок приёмов пищи (domain/meals.ts DEFAULT_MEAL_PLAN): новые приёмы дня встают по нему. */
-  mealPlan: text("meal_plan").array().notNull().default(sql`'{Завтрак,Обед,Перекус,Ужин}'::text[]`),
+  /**
+   * Свой список приёмов пищи по порядку (domain/meals.ts DEFAULT_MEAL_PLAN):
+   * новые приёмы дня встают по нему (скрытые тоже), «Перекус» — в конец дня.
+   */
+  mealPlan: text("meal_plan").array().notNull().default(sql`'{Завтрак,Обед,Ужин,Перекус}'::text[]`),
+  /**
+   * Названия из meal_plan, которые не предлагаются при добавлении еды (скрыты
+   * по умолчанию; сравнение — domain/meals.ts mealKey). Порядок дня они задают.
+   */
+  mealPlanHidden: text("meal_plan_hidden").array().notNull().default(sql`'{}'::text[]`),
   /** Показывать время приёмов пищи — по умолчанию только порядок. */
   showMealTimes: boolean("show_meal_times").notNull().default(false),
   onboardedAt: timestamp("onboarded_at", { withTimezone: true }),

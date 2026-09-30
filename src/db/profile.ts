@@ -1,7 +1,7 @@
 // Профиль, цель, вес и ручные нормы. Цель и вес — история (новая строка на
 // каждое изменение), текущие значения — последние строки. ARCHITECTURE.md §4.
 import { and, desc, eq } from "drizzle-orm";
-import { DEFAULT_MEAL_PLAN } from "@/domain/meals";
+import { DEFAULT_MEAL_PLAN, hiddenNames, type MealPlanItem, planItems, visiblePlan } from "@/domain/meals";
 import type { NutrientKey } from "@/domain/nutrients";
 import type { Activity, GoalKind, Sex } from "@/domain/norms";
 import type { DB } from ".";
@@ -23,14 +23,25 @@ export type UserState = {
   goal: GoalInput | null;
   weight: { kg: number; measuredAt: Date } | null;
   overrides: Partial<Record<NutrientKey, number>>;
-  /** Свой порядок приёмов пищи (до онбординга — по умолчанию). */
+  /** Приёмы пищи, которые предлагаются при добавлении еды, — по порядку, без скрытых (до онбординга — по умолчанию). */
   mealPlan: string[];
+  /** Свой список приёмов целиком, по порядку, с признаком «скрыт» — Профиль → «Приёмы пищи». */
+  mealItems: MealPlanItem[];
   /** Показывать время приёмов пищи. */
   showMealTimes: boolean;
 };
 
-/** Настройки приёмов пищи из Профиля: список по порядку и показ времени. */
-export type MealSettings = { plan: string[]; showTimes: boolean };
+/**
+ * Настройки приёмов пищи из Профиля: plan — названия, которые предлагаются при
+ * добавлении еды (по порядку, без скрытых); items — весь список по порядку с
+ * признаком «скрыт» (по нему встают новые приёмы дня, скрытые тоже); показ времени.
+ */
+export type MealSettings = { plan: string[]; items: MealPlanItem[]; showTimes: boolean };
+
+/** Список приёмов из строки профиля (нет профиля или список пуст — по умолчанию). */
+function mealItemsOf(p: { plan: string[] | null; hidden: string[] | null } | undefined): MealPlanItem[] {
+  return planItems(p?.plan?.length ? p.plan : DEFAULT_MEAL_PLAN, p?.hidden ?? []);
+}
 
 export async function getUserState(db: DB, ownerId: string): Promise<UserState> {
   const [[p], [g], [w], overrides] = await Promise.all([
@@ -39,6 +50,7 @@ export async function getUserState(db: DB, ownerId: string): Promise<UserState> 
     db.select().from(weightLog).where(eq(weightLog.ownerId, ownerId)).orderBy(desc(weightLog.measuredAt)).limit(1),
     db.select().from(normsOverride).where(eq(normsOverride.ownerId, ownerId)),
   ]);
+  const mealItems = mealItemsOf(p && { plan: p.mealPlan, hidden: p.mealPlanHidden });
   return {
     profile: p
       ? { sex: p.sex, birthYear: p.birthYear, heightCm: p.heightCm, activity: p.activity, timezone: p.timezone, onboardedAt: p.onboardedAt }
@@ -46,28 +58,40 @@ export async function getUserState(db: DB, ownerId: string): Promise<UserState> 
     goal: g ? { kind: g.kind, rateKgPerWeek: g.rateKgPerWeek, targetWeightKg: g.targetWeightKg } : null,
     weight: w ? { kg: w.weightKg, measuredAt: w.measuredAt } : null,
     overrides: Object.fromEntries(overrides.map((o) => [o.nutrient, o.value])),
-    mealPlan: p?.mealPlan?.length ? p.mealPlan : [...DEFAULT_MEAL_PLAN],
+    mealPlan: visiblePlan(mealItems),
+    mealItems,
     showMealTimes: p?.showMealTimes ?? false,
   };
 }
 
-/** Список приёмов и показ времени; профиля ещё нет — по умолчанию. */
+const mealColumns = { plan: profiles.mealPlan, hidden: profiles.mealPlanHidden, showTimes: profiles.showMealTimes };
+
+const toSettings = (p: { plan: string[] | null; hidden: string[] | null; showTimes: boolean } | undefined): MealSettings => {
+  const items = mealItemsOf(p);
+  return { plan: visiblePlan(items), items, showTimes: p?.showTimes ?? false };
+};
+
+/** Список приёмов (видимые и весь) и показ времени; профиля ещё нет — по умолчанию. */
 export async function getMealSettings(db: Conn, ownerId: string): Promise<MealSettings> {
-  const [p] = await db
-    .select({ plan: profiles.mealPlan, showTimes: profiles.showMealTimes })
-    .from(profiles)
-    .where(eq(profiles.ownerId, ownerId));
-  return { plan: p?.plan?.length ? p.plan : [...DEFAULT_MEAL_PLAN], showTimes: p?.showTimes ?? false };
+  const [p] = await db.select(mealColumns).from(profiles).where(eq(profiles.ownerId, ownerId));
+  return toSettings(p);
 }
 
 /**
- * Сохранить настройки приёмов (plan — уже нормализованный, domain/meals.ts
- * normalizeMealPlan). Приёмы в уже заполненных днях не меняются. Профиля
- * нет (онбординг не пройден) — NotFoundError.
+ * Что сохранить в настройках приёмов: items — весь список с признаком «скрыт»
+ * (уже нормализованный, domain/meals.ts normalizeMealPlanItems); plan — старые
+ * клиенты: список без скрытых (normalizeMealPlan), все приёмы в нём видны.
  */
-export async function saveMealSettings(db: DB, ownerId: string, input: Partial<MealSettings>): Promise<MealSettings> {
+export type MealSettingsInput = { items?: MealPlanItem[]; plan?: string[]; showTimes?: boolean };
+
+/**
+ * Сохранить настройки приёмов. Приёмы в уже заполненных днях не меняются.
+ * Профиля нет (онбординг не пройден) — NotFoundError.
+ */
+export async function saveMealSettings(db: DB, ownerId: string, input: MealSettingsInput): Promise<MealSettings> {
+  const items = input.items ?? input.plan?.map((name) => ({ name, hidden: false }));
   const set = {
-    ...(input.plan ? { mealPlan: input.plan } : {}),
+    ...(items ? { mealPlan: items.map((i) => i.name), mealPlanHidden: hiddenNames(items) } : {}),
     ...(input.showTimes != null ? { showMealTimes: input.showTimes } : {}),
   };
   if (Object.keys(set).length === 0) {
@@ -75,13 +99,9 @@ export async function saveMealSettings(db: DB, ownerId: string, input: Partial<M
     if (!exists) throw new NotFoundError("profile not found");
     return getMealSettings(db, ownerId);
   }
-  const [p] = await db
-    .update(profiles)
-    .set(set)
-    .where(eq(profiles.ownerId, ownerId))
-    .returning({ plan: profiles.mealPlan, showTimes: profiles.showMealTimes });
+  const [p] = await db.update(profiles).set(set).where(eq(profiles.ownerId, ownerId)).returning(mealColumns);
   if (!p) throw new NotFoundError("profile not found");
-  return p;
+  return toSettings(p);
 }
 
 export async function saveProfile(db: DB, ownerId: string, input: ProfileInput): Promise<void> {

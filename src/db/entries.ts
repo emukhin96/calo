@@ -151,8 +151,8 @@ type Ctx = { tz?: string; now?: Date };
 /**
  * Новая запись (POST /api/entries). Приём: mealId — этот (другого дня, чем date, —
  * BadRequestError; не нашёлся — по mealName, без него — NotFoundError); название (или старый вид) —
- * приём дня с ним либо новый на место по списку пользователя; ничего —
- * приём по умолчанию (domain/meals.ts defaultMealTarget).
+ * приём дня с ним («Перекус» — если он последний в дне) либо новый на место по списку
+ * пользователя («Перекус» — в конец дня); ничего — приём по умолчанию (domain/meals.ts defaultMealTarget).
  * Время: явное time → время с телефона в тот же день → сегодня «сейчас» →
  * время первой записи приёма → типичное время готового приёма / вида.
  */
@@ -175,12 +175,12 @@ export async function createEntry(db: DB, ownerId: string, input: NewEntry, ctx:
       date = found.date;
     } else {
       date = input.date ?? todayIn(tz, input.eatenAt ?? now);
-      const plan = await mealPlanOf(tx, ownerId);
+      const { order, visible } = await mealPlanOf(tx, ownerId);
       const name = normalizeMealName(input.mealName) ?? (input.meal ? MEAL_RU[input.meal] : null);
       const clientAt = input.eatenAt && zonedParts(input.eatenAt, tz).date === date ? input.eatenAt : null;
       meal = name
-        ? await mealByName(tx, ownerId, date, name, input.newMeal ?? false, plan)
-        : await defaultDayMeal(tx, ownerId, date, { plan, tz, at: clientAt ?? now });
+        ? await mealByName(tx, ownerId, date, name, input.newMeal ?? false, order)
+        : await defaultDayMeal(tx, ownerId, date, { plan: visible, order, tz, at: clientAt ?? now });
     }
 
     const eatenAt = await eatenAtFor(tx, { date, meal, input, tz, now });
@@ -202,7 +202,7 @@ export async function createEntry(db: DB, ownerId: string, input: NewEntry, ctx:
 /** Снимок записи из продукта или своего блюда; чужие — NotFoundError. */
 async function snapshotOf(tx: Conn, ownerId: string, input: NewEntry) {
   if ("recipeId" in input) {
-    // Своё блюдо: снимок из его КБЖУ на 100 г; счётчик — для сортировки «Мои блюда».
+    // Своё блюдо: снимок из его КБЖУ на 100 г; счётчик — для сортировки «Блюд».
     const [recipe] = await tx
       .update(recipes)
       .set({ useCount: sql`${recipes.useCount} + 1`, lastUsedAt: new Date() })
@@ -303,7 +303,8 @@ export async function updateEntry(db: DB, ownerId: string, id: string, patch: En
       // «Новый» приём с тем же названием для единственной записи приёма — это он
       // же: иначе приём пересоздался бы и молча уехал в конец дня.
       if (name && (!same || (patch.newMeal && (await mealSize(tx, from.id)) > 1))) {
-        target = await mealByName(tx, ownerId, from.date, name, patch.newMeal ?? false, await mealPlanOf(tx, ownerId));
+        const { order } = await mealPlanOf(tx, ownerId);
+        target = await mealByName(tx, ownerId, from.date, name, patch.newMeal ?? false, order);
       }
     }
 

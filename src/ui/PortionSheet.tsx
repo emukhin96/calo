@@ -19,8 +19,10 @@ type Props = {
   portion?: { grams: number; label: string } | null;
   /** Приёмы дня, в который пишем, — по порядку (lib/meal-choice toDayMeals). */
   meals: DayMeal[];
-  /** Свой список приёмов из Профиля: названия для нового приёма и его место в дне. */
+  /** Приёмы из своего списка в Профиле, которые предлагаются (без скрытых), — кнопки выбора. */
   plan: string[];
+  /** Весь свой список, со скрытыми: куда встанет новый приём (подсказка); без него — plan. */
+  order?: string[];
   /** Показ времени приёмов включён в Профиле: у нового приёма есть поле времени. */
   showTimes: boolean;
   initialMeal: MealChoice;
@@ -93,6 +95,7 @@ export function PortionSheet(p: Props) {
           <MealPicker
             meals={p.meals}
             plan={p.plan}
+            order={p.order}
             showTimes={p.showTimes}
             value={meal}
             onChange={setMeal}

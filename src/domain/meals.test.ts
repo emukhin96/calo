@@ -6,16 +6,22 @@ import {
   defaultMealName,
   defaultMealTarget,
   formatTime,
+  hiddenNames,
+  isSnack,
   MEAL_PLAN_MAX,
   mealKindOf,
   mealLabels,
+  mealToJoin,
   normalizeMealName,
   normalizeMealPlan,
+  normalizeMealPlanItems,
   parseTime,
   placeNewMeal,
+  planItems,
   planNames,
   PRESET_TIME,
   presetOf,
+  visiblePlan,
 } from "./meals";
 
 const TZ = "Europe/Moscow";
@@ -56,6 +62,14 @@ describe("normalizeMealName", () => {
     expect(normalizeMealName(" перекус ")).toBe("Перекус");
     expect(presetOf("обед")).toBe("Обед");
     expect(presetOf("Второй завтрак")).toBeNull();
+  });
+
+  it("isSnack: «Перекус» без учёта регистра и пробелов", () => {
+    expect(isSnack("Перекус")).toBe(true);
+    expect(isSnack("  ПЕРЕКУС ")).toBe(true);
+    expect(isSnack("Перекус 2")).toBe(false);
+    expect(isSnack("Полдник")).toBe(false);
+    expect(isSnack("")).toBe(false);
   });
 });
 
@@ -130,7 +144,11 @@ describe("normalizeMealPlan", () => {
       "Перекус",
       "Ужин",
     ]);
-    expect(normalizeMealPlan(DEFAULT_MEAL_PLAN)).toEqual(["Завтрак", "Обед", "Перекус", "Ужин"]);
+    expect(normalizeMealPlan(DEFAULT_MEAL_PLAN)).toEqual(["Завтрак", "Обед", "Ужин", "Перекус"]);
+  });
+
+  it("список по умолчанию — стандартный набор: завтрак, обед, ужин, перекус", () => {
+    expect(DEFAULT_MEAL_PLAN).toEqual(["Завтрак", "Обед", "Ужин", "Перекус"]);
   });
 
   it("от 1 до 12 приёмов; не список строк — null", () => {
@@ -143,6 +161,72 @@ describe("normalizeMealPlan", () => {
     expect(normalizeMealPlan(Array(MEAL_PLAN_MAX + 1).fill("Перекус"))).toBeNull();
     // пустые не считаются
     expect(normalizeMealPlan([...Array(MEAL_PLAN_MAX).fill("Перекус"), ""])).toHaveLength(12);
+  });
+});
+
+describe("свой список со скрытыми приёмами", () => {
+  it("normalizeMealPlanItems: названия нормализуются, пустые выбрасываются, повторы остаются", () => {
+    expect(
+      normalizeMealPlanItems([
+        { name: "  завтрак", hidden: false },
+        { name: "второй   завтрак", hidden: true },
+        { name: " ", hidden: true },
+        { name: "Обед" },
+        { name: "ПЕРЕКУС", hidden: false },
+      ]),
+    ).toEqual([
+      { name: "Завтрак", hidden: false },
+      { name: "Второй завтрак", hidden: true },
+      { name: "Обед", hidden: false },
+      { name: "Перекус", hidden: false },
+    ]);
+  });
+
+  it("скрыто название целиком: повтор скрыт, если скрыто хоть одно вхождение", () => {
+    expect(
+      normalizeMealPlanItems([
+        { name: "Кофе", hidden: false },
+        { name: "Обед", hidden: false },
+        { name: "кофе", hidden: true },
+      ]),
+    ).toEqual([
+      { name: "Кофе", hidden: true },
+      { name: "Обед", hidden: false },
+      { name: "Кофе", hidden: true },
+    ]);
+  });
+
+  it("1–12 приёмов и хотя бы один не скрыт; неверная форма — null", () => {
+    expect(normalizeMealPlanItems([])).toBeNull();
+    expect(normalizeMealPlanItems([{ name: "  " }])).toBeNull();
+    expect(normalizeMealPlanItems([{ name: "Обед", hidden: true }])).toBeNull();
+    expect(normalizeMealPlanItems([{ name: "Обед", hidden: true }, { name: "обед" }])).toBeNull();
+    expect(normalizeMealPlanItems(["Обед"])).toBeNull();
+    expect(normalizeMealPlanItems([{ name: 1 }])).toBeNull();
+    expect(normalizeMealPlanItems([{ name: "Обед", hidden: "yes" }])).toBeNull();
+    expect(normalizeMealPlanItems([null])).toBeNull();
+    expect(normalizeMealPlanItems({ name: "Обед" })).toBeNull();
+    expect(normalizeMealPlanItems(Array(MEAL_PLAN_MAX).fill({ name: "Полдник" }))).toHaveLength(12);
+    expect(normalizeMealPlanItems(Array(MEAL_PLAN_MAX + 1).fill({ name: "Полдник" }))).toBeNull();
+  });
+
+  it("planItems из хранения, visiblePlan и hiddenNames", () => {
+    const items = planItems(["Завтрак", "Второй завтрак", "Обед", "Ужин", "Перекус"], ["второй ЗАВТРАК", "Ужин", "Нет такого"]);
+    expect(items).toEqual([
+      { name: "Завтрак", hidden: false },
+      { name: "Второй завтрак", hidden: true },
+      { name: "Обед", hidden: false },
+      { name: "Ужин", hidden: true },
+      { name: "Перекус", hidden: false },
+    ]);
+    expect(visiblePlan(items)).toEqual(["Завтрак", "Обед", "Перекус"]);
+    expect(hiddenNames(items)).toEqual(["Второй завтрак", "Ужин"]);
+    expect(hiddenNames([{ name: "Кофе", hidden: true }, { name: "Кофе", hidden: true }])).toEqual(["Кофе"]);
+    expect(planItems(DEFAULT_MEAL_PLAN, [])).toEqual(DEFAULT_MEAL_PLAN.map((name) => ({ name, hidden: false })));
+  });
+
+  it("скрыто всё (правка базы руками) — показываются все", () => {
+    expect(visiblePlan(planItems(["Завтрак", "Обед"], ["Завтрак", "Обед"]))).toEqual(["Завтрак", "Обед"]);
   });
 });
 
@@ -170,7 +254,23 @@ describe("placeNewMeal: новый приём встаёт по списку п�
     expect(placeNewMeal([m("Завтрак", 1), m("Ужин", 2)], "Обед", PLAN)).toBe(1.5);
     expect(placeNewMeal([m("Ужин", 1)], "Завтрак", PLAN)).toBe(0);
     expect(placeNewMeal([m("Завтрак", 1)], "ужин", PLAN)).toBe(2);
-    expect(placeNewMeal([m("Обед", 3), m("Завтрак", 1), m("Ужин", 7)], "Перекус", PLAN)).toBe(5);
+    expect(placeNewMeal([m("Обед", 3), m("Завтрак", 1), m("Ужин", 7)], "Полдник", ["Завтрак", "Обед", "Полдник", "Ужин"])).toBe(5);
+  });
+
+  it("«Перекус» — всегда в конец дня, где бы он ни стоял в списке", () => {
+    expect(placeNewMeal([m("Обед", 3), m("Завтрак", 1), m("Ужин", 7)], "Перекус", PLAN)).toBe(8);
+    expect(placeNewMeal([m("Завтрак", 1), m("Обед", 2)], " перекус", ["Перекус", "Завтрак", "Обед", "Ужин"])).toBe(3);
+    expect(placeNewMeal([m("Завтрак", 1), m("Обед", 2), m("Ужин", 3)], "Перекус", ["Завтрак", "Перекус", "Обед", "Ужин"])).toBe(4);
+    expect(placeNewMeal([], "Перекус", PLAN)).toBe(1);
+  });
+
+  it("перекусы в дне остаются на месте и не сдвигают другие приёмы", () => {
+    // перекус после завтрака, затем ужин — после перекуса, а не перед ним
+    expect(placeNewMeal([m("Завтрак", 1), m("Перекус", 2)], "Ужин", PLAN)).toBe(3);
+    // обед — перед ужином, перекус утром не мешает
+    expect(placeNewMeal([m("Завтрак", 1), m("Перекус", 2), m("Ужин", 3)], "Обед", PLAN)).toBe(2.5);
+    // «Перекус» первым в списке — всё равно не место в дне
+    expect(placeNewMeal([m("Перекус", 1), m("Обед", 2)], "Завтрак", ["Перекус", "Завтрак", "Обед", "Ужин"])).toBe(1.5);
   });
 
   it("день в любом порядке — сравнение по позициям", () => {
@@ -179,8 +279,8 @@ describe("placeNewMeal: новый приём встаёт по списку п�
 
   it("приём, которого нет в списке, — в конец дня", () => {
     expect(placeNewMeal([m("Завтрак", 1), m("Обед", 2)], "Кофе с коллегами", PLAN)).toBe(3);
-    // второй «Перекус» при одном в списке — тоже в конец
-    expect(placeNewMeal([m("Перекус", 1), m("Ужин", 2)], "Перекус", PLAN)).toBe(3);
+    // второй «Обед» при одном в списке — тоже в конец
+    expect(placeNewMeal([m("Обед", 1), m("Ужин", 2)], "Обед", PLAN)).toBe(3);
   });
 
   it("приёмы не из списка остаются на месте и не участвуют в сравнении", () => {
@@ -190,15 +290,33 @@ describe("placeNewMeal: новый приём встаёт по списку п�
   });
 
   it("повторы в списке: k-й приём с названием — k-е место в списке", () => {
-    const plan = ["Завтрак", "Перекус", "Обед", "Перекус", "Ужин"];
-    // первый «Перекус» — между завтраком и обедом
-    expect(placeNewMeal([m("Завтрак", 1), m("Обед", 2), m("Ужин", 3)], "Перекус", plan)).toBe(1.5);
+    const plan = ["Завтрак", "Полдник", "Обед", "Полдник", "Ужин"];
+    // первый «Полдник» — между завтраком и обедом
+    expect(placeNewMeal([m("Завтрак", 1), m("Обед", 2), m("Ужин", 3)], "Полдник", plan)).toBe(1.5);
     // второй — между обедом и ужином
-    expect(placeNewMeal([m("Завтрак", 1), m("Перекус", 2), m("Обед", 3), m("Ужин", 4)], "перекус", plan)).toBe(3.5);
+    expect(placeNewMeal([m("Завтрак", 1), m("Полдник", 2), m("Обед", 3), m("Ужин", 4)], "полдник", plan)).toBe(3.5);
     // третий — мест в списке нет, в конец
     expect(
-      placeNewMeal([m("Завтрак", 1), m("Перекус", 2), m("Обед", 3), m("Перекус", 4), m("Ужин", 5)], "Перекус", plan),
+      placeNewMeal([m("Завтрак", 1), m("Полдник", 2), m("Обед", 3), m("Полдник", 4), m("Ужин", 5)], "Полдник", plan),
     ).toBe(6);
+  });
+});
+
+describe("mealToJoin: в какой приём дня встанет запись по названию", () => {
+  const m = (id: string, name: string, position: number) => ({ id, name, position });
+
+  it("последний приём дня с этим названием (по позициям)", () => {
+    const day = [m("l2", "Обед", 5), m("b", "Завтрак", 1), m("l1", "обед", 2)];
+    expect(mealToJoin(day, "Обед")?.id).toBe("l2");
+    expect(mealToJoin(day, "Ужин")).toBeUndefined();
+    expect(mealToJoin([], "Обед")).toBeUndefined();
+  });
+
+  it("«Перекус» — только если он последний в дне", () => {
+    expect(mealToJoin([m("s", "Перекус", 1), m("l", "Обед", 2)], "Перекус")).toBeUndefined();
+    expect(mealToJoin([m("s1", "Перекус", 1), m("l", "Обед", 2), m("s2", "перекус", 3)], "Перекус")?.id).toBe("s2");
+    expect(mealToJoin([m("s", "Перекус", 3), m("l", "Обед", 2)], " ПЕРЕКУС")?.id).toBe("s");
+    expect(mealToJoin([], "Перекус")).toBeUndefined();
   });
 });
 
@@ -243,10 +361,18 @@ describe("defaultMealTarget: приём по умолчанию", () => {
     expect(target([], "09:00", { preferred: { name: "  " } })).toEqual({ name: "Завтрак" });
   });
 
+  it("2: «Перекус» — к перекусу, только если он последний в дне, иначе новый (в конце дня)", () => {
+    const day = [m("s", "Перекус", 1, "11:00"), m("l", "Обед", 2, "13:00")];
+    expect(target(day, "16:00", { preferred: { name: "Перекус" } })).toEqual({ name: "Перекус" });
+    expect(target([...day, m("s2", "Перекус", 3, "15:00")], "16:00", { preferred: { name: "перекус" } })).toEqual({
+      mealId: "s2",
+    });
+  });
+
   it("3: сегодня — приём, в который добавляли за последние 90 минут", () => {
     const day = [m("b", "Завтрак", 1, "08:30"), m("l", "Обед", 2, "13:00")];
     expect(target(day, "14:25", {})).toEqual({ mealId: "l" });
-    expect(target(day, "14:31", {})).toEqual({ name: "Перекус" });
+    expect(target(day, "14:31", {})).toEqual({ name: "Перекус" }); // до ужина больше двух часов (правило 4)
     // из нескольких недавних — последний по времени, а не по порядку
     const moved = [m("l", "Обед", 1, "13:00"), m("b", "Завтрак", 2, "12:50")];
     expect(target(moved, "13:30", {})).toEqual({ mealId: "l" });
@@ -257,27 +383,59 @@ describe("defaultMealTarget: приём по умолчанию", () => {
     // ISO-строка из JSON
     expect(target([{ ...m("l", "Обед", 1), lastAt: at("13:00").toISOString() }], "13:30", {})).toEqual({ mealId: "l" });
     // в другой день недавность не в счёт
-    expect(target(day, "13:10", { isToday: false })).toEqual({ name: "Перекус" });
+    expect(target(day, "13:10", { isToday: false })).toEqual({ name: "Ужин" });
+    // недавний перекус — он, даже не последний в дне
+    expect(target([m("s", "Перекус", 1, "12:40"), m("l", "Обед", 2, "12:00")], "13:00", {})).toEqual({ mealId: "s" });
   });
 
   it("4: следующий по списку незанятый приём после последнего занятого", () => {
     expect(target([m("b", "Завтрак", 1, "08:30")], "12:00", {})).toEqual({ name: "Обед" });
-    expect(target([m("b", "Завтрак", 1, "08:30"), m("l", "Обед", 2, "13:00")], "17:00", {})).toEqual({ name: "Перекус" });
-    // назад по списку не возвращается: после обеда — перекус, даже вечером
-    expect(target([m("l", "Обед", 1, "13:00")], "20:00", {})).toEqual({ name: "Перекус" });
+    expect(target([m("b", "Завтрак", 1, "08:30"), m("l", "Обед", 2, "13:00")], "18:00", {})).toEqual({ name: "Ужин" });
+    // назад по списку не возвращается: после обеда — ужин, даже утром в другой день
+    expect(target([m("l", "Обед", 1, "13:00")], "08:00", { isToday: false })).toEqual({ name: "Ужин" });
     // приём не из списка не сбивает: последний занятый — «Обед»
-    expect(target([m("l", "Обед", 1, "13:00"), m("c", "Кофе", 2, "15:00")], "18:00", {})).toEqual({ name: "Перекус" });
+    expect(target([m("l", "Обед", 1, "13:00"), m("c", "Кофе", 2, "15:00")], "18:00", {})).toEqual({ name: "Ужин" });
     // порядок — по позициям: «Ужин» передвинут выше «Обеда»
-    expect(target([m("d", "Ужин", 1, "19:00"), m("l", "Обед", 2, "13:00")], "21:00", { isToday: false })).toEqual({
-      name: "Перекус",
+    const plan = ["Завтрак", "Обед", "Полдник", "Ужин"];
+    expect(target([m("d", "Ужин", 1, "19:00"), m("l", "Обед", 2, "13:00")], "21:00", { isToday: false, plan })).toEqual({
+      name: "Полдник",
     });
   });
 
-  it("4: повторы в списке — второе место «Перекуса» — новый приём", () => {
-    const plan = ["Завтрак", "Перекус", "Обед", "Перекус", "Ужин"];
-    const day = [m("b", "Завтрак", 1, "08:30"), m("s", "Перекус", 2, "11:00"), m("l", "Обед", 3, "13:00")];
-    expect(target(day, "16:30", { plan })).toEqual({ name: "Перекус" });
-    expect(target([...day, m("s2", "Перекус", 4, "16:30")], "19:00", { plan })).toEqual({ name: "Ужин" });
+  it("4: «Перекус» по порядку не предлагается и места в списке не занимает", () => {
+    const day = [m("b", "Завтрак", 1, "08:30"), m("l", "Обед", 2, "13:00"), m("d", "Ужин", 3, "19:00")];
+    // после ужина список пройден — по часу: вечером ужин, ночью — новый перекус
+    expect(target(day, "21:00", {})).toEqual({ mealId: "d" });
+    expect(target(day, "23:30", {})).toEqual({ name: "Перекус" });
+    // перекус в списке между завтраком и обедом: после завтрака и перекуса — обед
+    const plan = ["Завтрак", "Перекус", "Обед", "Ужин"];
+    const morning = [m("b", "Завтрак", 1, "08:30"), m("s", "Перекус", 2, "10:30")];
+    expect(target(morning, "12:30", { plan })).toEqual({ name: "Обед" });
+    expect(target([m("b", "Завтрак", 1, "08:30")], "12:00", { plan })).toEqual({ name: "Обед" });
+  });
+
+  it("4: сегодня до следующего по списку больше двух часов — перекус (в конец дня)", () => {
+    const lunch = [m("b", "Завтрак", 1, "08:30"), m("l", "Обед", 2, "13:00")];
+    // после обеда: 15:00 и 17:00 — перекус, с 17:30 (ужин в 19:30) — ужин
+    expect(target(lunch, "15:00", {})).toEqual({ name: "Перекус" });
+    expect(target(lunch, "17:00", {})).toEqual({ name: "Перекус" });
+    expect(target(lunch, "17:30", {})).toEqual({ name: "Ужин" });
+    // перекус уже последний в дне — к нему
+    expect(target([...lunch, m("s", "Перекус", 3, "14:40")], "16:30", {})).toEqual({ mealId: "s" });
+    // после завтрака в 10:30 (обед в 13:30) — перекус, в 12:00 — обед
+    expect(target([m("b", "Завтрак", 1, "08:30")], "10:30", {})).toEqual({ name: "Перекус" });
+    expect(target([m("b", "Завтрак", 1, "08:30")], "12:00", {})).toEqual({ name: "Обед" });
+    // в другой день времени нет — по списку; перекус скрыт — по списку; своё название без времени — по списку
+    expect(target(lunch, "15:00", { isToday: false })).toEqual({ name: "Ужин" });
+    expect(target(lunch, "15:00", { plan: ["Завтрак", "Обед", "Ужин"] })).toEqual({ name: "Ужин" });
+    expect(target(lunch, "15:00", { plan: ["Завтрак", "Обед", "Полдник", "Ужин", "Перекус"] })).toEqual({ name: "Полдник" });
+  });
+
+  it("4: повторы в списке — второе место «Полдника» — новый приём", () => {
+    const plan = ["Завтрак", "Полдник", "Обед", "Полдник", "Ужин"];
+    const day = [m("b", "Завтрак", 1, "08:30"), m("s", "Полдник", 2, "11:00"), m("l", "Обед", 3, "13:00")];
+    expect(target(day, "16:30", { plan })).toEqual({ name: "Полдник" });
+    expect(target([...day, m("s2", "Полдник", 4, "16:30")], "19:00", { plan })).toEqual({ name: "Ужин" });
   });
 
   it("5: пустой день — приём списка по часу, иначе первый в списке", () => {
@@ -287,20 +445,41 @@ describe("defaultMealTarget: приём по умолчанию", () => {
     expect(target([], "03:00", { plan: ["Завтрак", "Обед", "Ужин"] })).toEqual({ name: "Завтрак" });
     // вечером дописываем вчерашний день — «Ужин»
     expect(target([], "21:00", { isToday: false })).toEqual({ name: "Ужин" });
-    // в дне только приёмы не из списка — тоже по часу
+    // в дне только приёмы не из списка или перекусы — тоже по часу
     expect(target([m("c", "Кофе", 1, "07:00")], "13:00", {})).toEqual({ name: "Обед" });
+    expect(target([m("s", "Перекус", 1, "07:00")], "13:00", {})).toEqual({ name: "Обед" });
+    // по часу — перекус: последний в дне перекус или новый
+    expect(target([m("s", "Перекус", 1, "07:00")], "17:00", {})).toEqual({ mealId: "s" });
+    expect(target([m("s", "Перекус", 1, "07:00"), m("c", "Кофе", 2, "09:00")], "17:00", {})).toEqual({ name: "Перекус" });
   });
 
   it("6: список пройден — сегодня по часу, в другой день — последний приём", () => {
     const full = [m("b", "Завтрак", 1, "08:30"), m("l", "Обед", 2, "13:00"), m("s", "Перекус", 3, "16:30"), m("d", "Ужин", 4, "19:00")];
     expect(target(full, "22:00", {})).toEqual({ mealId: "d" });
-    expect(target(full, "23:30", {})).toEqual({ mealId: "s" }); // ночью — «Перекус», он уже есть
+    // ночью — «Перекус»: дневной перекус не последний — новый, в конце дня
+    expect(target(full, "23:30", {})).toEqual({ name: "Перекус" });
+    expect(target([...full, m("s2", "Перекус", 5, "21:00")], "23:30", {})).toEqual({ mealId: "s2" });
     expect(target(full, "22:00", { isToday: false })).toEqual({ mealId: "d" });
     const reordered = [m("b", "Завтрак", 1), m("l", "Обед", 2), m("d", "Ужин", 3), m("s", "Перекус", 4)];
     expect(target(reordered, "12:00", { isToday: false })).toEqual({ mealId: "s" });
     // только ужин, утром сегодня — новый «Завтрак»
     expect(target([m("d", "Ужин", 1, "19:00")], "09:00", {})).toEqual({ name: "Завтрак" });
     expect(target([m("d", "Ужин", 1, "19:00")], "09:00", { isToday: false })).toEqual({ mealId: "d" });
+  });
+
+  it("6: скрытое название по часу не предлагается — «Перекус», скрыт и он — последний приём", () => {
+    const day = [m("b", "Завтрак", 1, "08:30"), m("l", "Обед", 2, "13:00"), m("d", "Ужин", 3, "19:00")];
+    // «Перекус» скрыт: ночью — к ужину, а не новый скрытый перекус
+    expect(target(day, "23:30", { plan: ["Завтрак", "Обед", "Ужин"] })).toEqual({ mealId: "d" });
+    // перекус уже есть в дне последним — к нему, хоть он и скрыт
+    expect(target([...day, m("s", "Перекус", 4, "21:00")], "23:30", { plan: ["Завтрак", "Обед", "Ужин"] })).toEqual({ mealId: "s" });
+    // «Ужин» скрыт: вечером после обеда — новый «Перекус» (в конце дня), а не скрытый ужин
+    const lunch = day.slice(0, 2);
+    expect(target(lunch, "19:30", { plan: ["Завтрак", "Обед", "Перекус"] })).toEqual({ name: "Перекус" });
+    // скрыты и ужин, и перекус — последний приём дня
+    expect(target(lunch, "19:30", { plan: ["Завтрак", "Обед"] })).toEqual({ mealId: "l" });
+    // начатый приём со скрытым названием — к нему
+    expect(target(day, "21:00", { plan: ["Завтрак", "Обед"] })).toEqual({ mealId: "d" });
   });
 });
 

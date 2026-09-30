@@ -5,7 +5,7 @@ import { createTestDb } from "@/test/db";
 import type { DB } from ".";
 import { createEntry, loadDayData } from "./entries";
 import { BadRequestError, NotFoundError } from "./errors";
-import { deleteDayMeal, insertDayMeal, listDayMeals, updateDayMeal } from "./meals";
+import { deleteDayMeal, insertDayMeal, listDayMeals, MealOrderConflictError, reorderDayMeals, updateDayMeal } from "./meals";
 import { dayMeals, entries, foods, user } from "./schema";
 
 let db: DB;
@@ -54,10 +54,9 @@ describe("выше / ниже", () => {
     expect((await loadDayData(db, ME, D, TZ)).meals.map((m) => m.name)).toEqual(["Ужин", "Завтрак", "Обед"]);
   });
 
-  it("новый приём после перестановки встаёт по списку среди остальных", async () => {
+  it("новый перекус после перестановки — в конец дня", async () => {
     await add(D, "Перекус");
-    // «Ужин» (выше всех) в сравнении участвует: перекус — перед первым, кто дальше в списке
-    expect(await names(D)).toEqual(["Перекус", "Ужин", "Завтрак", "Обед"]);
+    expect(await names(D)).toEqual(["Ужин", "Завтрак", "Обед", "Перекус"]);
   });
 });
 
@@ -134,14 +133,67 @@ describe("позиции", () => {
 
   it("много вставок подряд между одними соседями", async () => {
     const D = "2026-09-05";
-    const plan = ["Завтрак", ...Array(80).fill("Перекус"), "Ужин"];
+    const plan = ["Завтрак", ...Array(80).fill("Полдник"), "Ужин"];
     await insertDayMeal(db, ME, D, "Завтрак", plan);
     await insertDayMeal(db, ME, D, "Ужин", plan);
-    for (let i = 0; i < 70; i++) await insertDayMeal(db, ME, D, "Перекус", plan);
+    for (let i = 0; i < 70; i++) await insertDayMeal(db, ME, D, "Полдник", plan);
     const day = await listDayMeals(db, ME, D);
     expect(day).toHaveLength(72);
     expect(day[0].name).toBe("Завтрак");
     expect(day.at(-1)!.name).toBe("Ужин");
     expect(new Set(day.map((m) => m.position)).size).toBe(72);
+  });
+});
+
+describe("порядок дня перетаскиванием (reorderDayMeals)", () => {
+  const D = "2026-09-06";
+  const order = async (owner = ME) => (await listDayMeals(db, owner, D)).map((m) => [m.name, m.position]);
+
+  it("позиции 1…n в присланном порядке; повтор того же порядка ничего не меняет", async () => {
+    const b = await add(D, "Завтрак");
+    const l = await add(D, "Обед");
+    const s = await add(D, "Перекус");
+    const out = await reorderDayMeals(db, ME, D, [s.mealId, b.mealId, l.mealId]);
+    expect(out).toEqual([
+      { id: s.mealId, name: "Перекус", position: 1 },
+      { id: b.mealId, name: "Завтрак", position: 2 },
+      { id: l.mealId, name: "Обед", position: 3 },
+    ]);
+    expect(await order()).toEqual([
+      ["Перекус", 1],
+      ["Завтрак", 2],
+      ["Обед", 3],
+    ]);
+    expect(await reorderDayMeals(db, ME, D, [s.mealId, b.mealId, l.mealId])).toEqual(out);
+    expect((await loadDayData(db, ME, D, TZ)).meals.map((m) => m.name)).toEqual(["Перекус", "Завтрак", "Обед"]);
+    // новый ужин после перестановки — по списку: после обеда
+    await add(D, "Ужин");
+    expect(await names(D)).toEqual(["Перекус", "Завтрак", "Обед", "Ужин"]);
+  });
+
+  it("не тот набор приёмов (лишний, не хватает, повтор, чужой) — конфликт с порядком как есть", async () => {
+    const day = await listDayMeals(db, ME, D);
+    const ids = day.map((m) => m.id);
+    const current = day.map(({ id, name, position }) => ({ id, name, position }));
+    const theirs = await add(D, "Обед", OTHER);
+    const conflict = (owner: string, list: string[]) => reorderDayMeals(db, owner, D, list).catch((e: unknown) => e);
+
+    for (const list of [ids.slice(1), [...ids, theirs.mealId], [ids[0], ids[0], ids[1], ids[2]], [...ids.slice(1), "00000000-0000-4000-8000-000000000000"]]) {
+      const e = await conflict(ME, list);
+      expect(e).toBeInstanceOf(MealOrderConflictError);
+      expect((e as MealOrderConflictError).current).toEqual(current);
+    }
+    // чужие приёмы не переставить: у другого владельца в этот день свои приёмы
+    const e = await conflict(OTHER, [...ids].reverse());
+    expect(e).toBeInstanceOf(MealOrderConflictError);
+    expect((e as MealOrderConflictError).current).toEqual([{ id: theirs.mealId, name: "Обед", position: 1 }]);
+    // приёмы другого дня — тоже конфликт
+    expect(await reorderDayMeals(db, ME, "2026-09-07", ids).catch((x: unknown) => x)).toBeInstanceOf(MealOrderConflictError);
+    expect(await order()).toEqual(current.map((m) => [m.name, m.position]));
+    expect(await order(OTHER)).toEqual([["Обед", 1]]);
+  });
+
+  it("пустой день и пустой список — ничего", async () => {
+    expect(await reorderDayMeals(db, ME, "2026-09-08", [])).toEqual([]);
   });
 });

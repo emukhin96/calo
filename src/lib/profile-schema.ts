@@ -26,10 +26,20 @@ export const OverrideBody = z.object({
   value: z.number().positive().max(100000).nullable(),
 });
 
-/** Настройки приёмов пищи (PUT /api/profile/meals); plan нормализует domain/meals.ts normalizeMealPlan. */
+/** Приём своего списка: название и «скрыт» — не предлагается при добавлении еды. */
+export const MealPlanItemBody = z.object({ name: z.string().max(200), hidden: z.boolean().optional() });
+
+/**
+ * Настройки приёмов пищи (PUT /api/profile/meals): items — весь список по
+ * порядку с признаком «скрыт» (нормализует domain/meals.ts normalizeMealPlanItems:
+ * 1–12 названий, хотя бы одно не скрыто); plan — старые клиенты: список названий,
+ * все видны (normalizeMealPlan). items и plan вместе — нельзя.
+ */
 export const MealSettingsBody = z
   .object({
+    items: z.array(MealPlanItemBody).min(1).max(40).optional(),
     plan: z.array(z.string().max(200)).min(1).max(40).optional(),
     showTimes: z.boolean().optional(),
   })
-  .refine((b) => b.plan != null || b.showTimes != null);
+  .refine((b) => b.items != null || b.plan != null || b.showTimes != null)
+  .refine((b) => b.items == null || b.plan == null);

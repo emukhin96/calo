@@ -24,17 +24,15 @@ const minutes = (t: { hour: number; minute: number }) => t.hour * 60 + t.minute;
 type SheetMeal = { id: string; name: string; label: string; time: string | null; kcal: number; entryCount: number };
 
 /**
- * Лист приёма пищи: передвинуть выше / ниже в дне (сразу), переименовать —
- * название из своего списка приёмов или своё — и, если показ времени включён
- * в Профиле, поменять время всему приёму; добавить в него; сохранить как
- * блюдо; удалить. Поле названия без автофокуса: клавиатура — только когда в
- * него нажали.
+ * Лист приёма пищи: переименовать — название из своего списка приёмов или
+ * своё — и, если показ времени включён в Профиле, поменять время всему
+ * приёму; добавить в него; сохранить в «Блюда»; удалить. Порядок приёмов в
+ * дне меняют перетаскиванием на самой ленте (DayTimeline), не здесь. Поле
+ * названия без автофокуса: клавиатура — только когда в него нажали.
  */
 export function MealSheet({
   date,
   meal,
-  index,
-  count,
   plan,
   showTimes,
   onSaveAsDish,
@@ -42,10 +40,7 @@ export function MealSheet({
 }: {
   date: string;
   meal: SheetMeal;
-  /** Место приёма в дне (с 0) и сколько приёмов в дне — для «Выше» / «Ниже». */
-  index: number;
-  count: number;
-  /** Свой список приёмов из Профиля — готовые названия. */
+  /** Приёмы своего списка из Профиля (без скрытых) — готовые названия. */
   plan: string[];
   /** Показ времени приёмов включён в Профиле: время в шапке и поле времени. */
   showTimes: boolean;
@@ -56,8 +51,6 @@ export function MealSheet({
   const router = useRouter();
   const [name, setName] = useState(meal.name);
   const [time, setTime] = useState(meal.time ?? "");
-  /** Порядок приёмов дня из ответа «Выше» / «Ниже» — пока лента за листом не обновилась. */
-  const [order, setOrder] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const keyboard = useKeyboardInset();
@@ -69,9 +62,6 @@ export function MealSheet({
   // Стёрли время (кнопка «Сбросить» на iOS) — время приёма не меняем.
   const retimed = showTimes && at != null && (was == null || minutes(at) !== minutes(was));
   const changed = renamed || retimed;
-  const moved = order?.indexOf(meal.id) ?? -1;
-  const place = moved >= 0 ? moved : index;
-  const total = moved >= 0 ? order!.length : count;
 
   async function run(action: () => Promise<void>) {
     if (busy) return;
@@ -84,18 +74,6 @@ export function MealSheet({
     } finally {
       setBusy(false);
     }
-  }
-
-  async function move(dir: "up" | "down") {
-    const res = await fetch(`/api/meals/${meal.id}`, {
-      method: "PATCH",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ move: dir }),
-    });
-    if (!res.ok) throw new Error("meal move failed");
-    const { meals } = (await res.json()) as { meals: { id: string }[] };
-    setOrder(meals.map((m) => m.id));
-    router.refresh();
   }
 
   async function save() {
@@ -148,17 +126,6 @@ export function MealSheet({
         <p className="tabular mt-0.5 text-[15px] text-ink-3">
           {countOf(meal.entryCount, ENTRIES)} · {formatInt(meal.kcal)} ккал
         </p>
-
-        {/* Порядок в дне — сразу, без «Сохранить»: лента за листом перестраивается. */}
-        {total > 1 && (
-          <div role="group" aria-label="Порядок в дне" className="mt-4 flex items-center gap-2">
-            <MoveButton dir="up" disabled={busy || place <= 0} onClick={() => run(() => move("up"))} />
-            <span className="tabular shrink-0 px-1 text-[14px] text-ink-3">
-              {place + 1} из {total}
-            </span>
-            <MoveButton dir="down" disabled={busy || place >= total - 1} onClick={() => run(() => move("down"))} />
-          </div>
-        )}
 
         <p className="mt-5 text-[15px] font-semibold text-ink">{showTimes ? "Название и время" : "Название"}</p>
         {/* Кнопки растягиваются на всю строку, как сегменты; длинное название
@@ -236,31 +203,5 @@ export function MealSheet({
         </button>
       </div>
     </BottomSheet>
-  );
-}
-
-/** «↑ Выше» / «↓ Ниже» — поменяться местами с соседним приёмом дня. */
-function MoveButton({ dir, disabled, onClick }: { dir: "up" | "down"; disabled: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="flex h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border border-line bg-surface text-[15px] font-semibold text-ink disabled:opacity-40"
-    >
-      <svg
-        aria-hidden
-        viewBox="0 0 24 24"
-        className="size-[18px] shrink-0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d={dir === "up" ? "M12 19V5M6 11l6-6 6 6" : "M12 5v14M6 13l6 6 6-6"} />
-      </svg>
-      {dir === "up" ? "Выше" : "Ниже"}
-    </button>
   );
 }

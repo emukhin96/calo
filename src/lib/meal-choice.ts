@@ -1,8 +1,11 @@
-// Выбор приёма пищи в листе порции (ui/MealPicker): какой приём предложить
-// по умолчанию и что из выбора отправить в POST / PATCH /api/entries.
-// День — упорядоченный список приёмов (day_meals); новый приём встаёт на место
-// по списку пользователя из Профиля (domain/meals.ts placeNewMeal). Время приёма
-// вторично: показывается и задаётся, только если это включено в Профиле.
+// Выбор приёма пищи в листе порции (ui/MealPicker): кнопки выбора, какой приём
+// предложить по умолчанию и что из выбора отправить в POST / PATCH /api/entries.
+// Кнопки — стандартный набор из своего списка в Профиле (без скрытых, по его
+// порядку): «Завтрак · Обед · Ужин · Перекус», затем приёмы дня не из списка и
+// «свой…». Название, которое в дне уже есть, — в этот приём; нет — новый приём,
+// он встаёт на место по списку (domain/meals.ts placeNewMeal), «Перекус» — в
+// конец дня. Время приёма вторично: показывается и задаётся, только если это
+// включено в Профиле.
 // Чистая логика без React — годится и для клиента, и для тестов (./meal-choice.test.ts).
 import { MEAL_TIME } from "@/domain/day";
 import {
@@ -11,9 +14,11 @@ import {
   mealKey,
   mealKindOf,
   mealLabels,
+  mealToJoin,
   normalizeMealName,
   parseTime,
   placeNewMeal,
+  planNames,
   PRESET_TIME,
   presetOf,
 } from "@/domain/meals";
@@ -108,7 +113,8 @@ const positioned = (meals: readonly DayMeal[]) => meals.map((m, i) => ({ id: m.i
  * Приём по умолчанию в листе порции — то же правило, что у сервера без приёма
  * (domain/meals.ts defaultMealTarget): выбранный в ссылке приём (по id или
  * названию) → сегодня — приём, в который добавляли за последние 90 минут →
- * следующий по списку пользователя → по часу. Новый приём — без времени.
+ * следующий по списку пользователя → по часу. plan — названия, которые
+ * предлагаются (без скрытых). Новый приём — без времени.
  */
 export function defaultMealChoice(opts: {
   meals: readonly DayMeal[];
@@ -132,37 +138,87 @@ export function defaultMealChoice(opts: {
 }
 
 /**
- * Название, которое предложить для «+ новый»: следующий по списку пользователя
- * незанятый приём дня; после последнего занятого мест нет — незанятое место
- * раньше (забытый завтрак; по часу, если и оно свободно), а не второй такой же
- * приём; список заполнен целиком — по часу «сейчас» (ещё один приём).
+ * Кнопка выбора приёма (ui/MealPicker):
+ * - plan — название из своего списка (без скрытых): запись встанет в приём дня
+ *   с этим названием (join; «Перекус» — только если он в дне последний,
+ *   domain/meals.ts mealToJoin), а такого нет — в новый приём;
+ * - meal — этот приём дня: не из списка («Кофе», скрытый «Полдник») или
+ *   выбранный заранее («+» у приёма, правка записи), которого кнопка названия
+ *   не выберет («Перекус · 1» — первый из двух).
+ * key — для React и выбора (chosenChip).
  */
-export function newMealName(opts: { meals: readonly DayMeal[]; plan: readonly string[]; now?: Date }): string {
-  const now = opts.now ?? new Date();
-  // Как в другой день: без «недавнего» приёма — нужен именно новый.
-  const target = defaultMealTarget({ dayMeals: positioned(opts.meals), plan: opts.plan, isToday: false, now, nowLocal: localClock(now) });
-  if ("name" in target) return target.name;
-  // k-е вхождение названия в списке занято, если в дне больше k приёмов с ним (как в placeNewMeal).
-  const inDay = new Map<string, number>();
-  for (const m of opts.meals) inDay.set(mealKey(m.name), (inDay.get(mealKey(m.name)) ?? 0) + 1);
-  const seen = new Map<string, number>();
-  const free = opts.plan.filter((p) => {
-    const k = mealKey(p);
-    const n = seen.get(k) ?? 0;
-    seen.set(k, n + 1);
-    return (inDay.get(k) ?? 0) <= n;
+export type MealChip =
+  | { kind: "plan"; key: string; label: string; name: string; join: DayMeal | null }
+  | { kind: "meal"; key: string; label: string; meal: DayMeal };
+
+/**
+ * Кнопки выбора приёма: названия своего списка по его порядку (повторы в
+ * списке — одна кнопка), затем приёмы дня не из списка — по порядку дня, с
+ * подписью дня («Кофе · 2», с показом времени — «Кофе 16:30»). keep — приёмы
+ * дня, выбранные заранее: если кнопка названия их не выберет (первый из двух
+ * «Перекусов», «Перекус» не последним в дне), у них своя кнопка среди приёмов
+ * дня — «Перекус · 1».
+ */
+export function mealChips(
+  meals: readonly DayMeal[],
+  plan: readonly string[],
+  keep: readonly (string | null | undefined)[] = [],
+): MealChip[] {
+  const names = planNames(plan);
+  const day = positioned(meals);
+  const chips: MealChip[] = names.map((name) => {
+    const hit = mealToJoin(day, name);
+    return { kind: "plan", key: `plan:${mealKey(name)}`, label: name, name, join: meals.find((m) => m.id === hit?.id) ?? null };
   });
-  const byHour = defaultMealName(now.getHours());
-  return free.find((p) => mealKey(p) === mealKey(byHour)) ?? free[0] ?? byHour;
+  const inPlan = new Set(names.map(mealKey));
+  const joined = new Set(chips.map((c) => (c.kind === "plan" ? c.join?.id : undefined)));
+  const seen = new Map<string, number>();
+  for (const m of meals) {
+    const k = mealKey(m.name);
+    const n = (seen.get(k) ?? 0) + 1;
+    seen.set(k, n);
+    if (!inPlan.has(k)) chips.push({ kind: "meal", key: `meal:${m.id}`, label: m.label, meal: m });
+    else if (keep.includes(m.id) && !joined.has(m.id))
+      // Подпись без номера и времени совпала бы с кнопкой названия — с номером.
+      chips.push({ kind: "meal", key: `meal:${m.id}`, label: m.label !== m.name ? m.label : `${m.name} · ${n}`, meal: m });
+  }
+  return chips;
+}
+
+/**
+ * Какая кнопка выбрана: начатый приём — кнопка, которая в него добавит; новый —
+ * кнопка его названия из списка (своё название — ни одна, оно в поле «свой…»).
+ */
+export function chosenChip(chips: readonly MealChip[], value: MealChoice): string | null {
+  if (value.kind === "existing") {
+    const hit = chips.find((c) => (c.kind === "plan" ? c.join?.id : c.meal.id) === value.mealId);
+    return hit?.key ?? null;
+  }
+  const k = mealKey(value.name);
+  return (k && chips.find((c) => c.kind === "plan" && mealKey(c.name) === k)?.key) || null;
+}
+
+/**
+ * Выбор по нажатию кнопки: в приём дня (join или приём кнопки) или новый
+ * приём с этим названием — с временем, выставленным вручную (null — решит
+ * сервер). Новый «Перекус», когда перекус в дне уже есть, но не последний, —
+ * again: сервер заведёт ещё один в конце дня.
+ */
+export function chipChoice(chip: MealChip, meals: readonly { name: string }[], time: string | null = null): MealChoice {
+  const m = chip.kind === "meal" ? chip.meal : chip.join;
+  if (m) return { kind: "existing", mealId: m.id, name: m.name };
+  return newMealChoice(meals, chip.label, time);
 }
 
 /**
  * Куда в дне встанет новый приём name — индекс вставки в meals (0 — первым,
- * meals.length — последним). Та же раскладка, что у сервера (placeNewMeal).
+ * meals.length — последним). Та же раскладка, что у сервера (placeNewMeal):
+ * order — весь свой список, со скрытыми (они тоже задают порядок); «Перекус» —
+ * в конец дня.
  */
-export function newMealIndex(meals: readonly { name: string }[], name: string, plan: readonly string[]): number {
+export function newMealIndex(meals: readonly { name: string }[], name: string, order: readonly string[]): number {
   const list = meals.map((m, i) => ({ name: m.name, position: i + 1 }));
-  const at = placeNewMeal(list, normalizeMealName(name) ?? name, plan);
+  const at = placeNewMeal(list, normalizeMealName(name) ?? name, order);
   return list.filter((m) => m.position < at).length;
 }
 
