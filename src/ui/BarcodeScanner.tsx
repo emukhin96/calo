@@ -1,11 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { BARCODE_RE, canonicalBarcode, gtinCheckOk, gtinFromScan } from "@/domain/barcode";
 import { useKeyboardInset } from "./useKeyboardInset";
 
 type Props = { onCode: (code: string) => void; onClose: () => void };
 
-const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e"] as const;
+// DataMatrix — коды маркировки («Честный знак» на молочке и воде из России), QR —
+// GS1 Digital Link; в обоих — штрихкод товара (GTIN).
+const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "data_matrix", "qr_code"] as const;
+
+/**
+ * Код товара из распознанного: UPC-E (канадские и американские мелкие пачки)
+ * разворачивается в UPC-A, UPC-A — с нулём впереди, как в Open Food Facts; из
+ * двумерного кода — GTIN. null — не товар (рекламный QR): сканируем дальше.
+ */
+function productCode(format: string, raw: string): string | null {
+  if (format === "data_matrix" || format === "qr_code") return gtinFromScan(raw);
+  const code = canonicalBarcode(raw, { upcE: format === "upc_e" });
+  return BARCODE_RE.test(code) ? code : null;
+}
 
 /**
  * Сканер штрихкода камерой. Родной BarcodeDetector, где он есть (Chrome/Android),
@@ -51,11 +65,12 @@ export function BarcodeScanner({ onCode, onClose }: Props) {
         const tick = async () => {
           if (cancelled || done.current || !video.current) return;
           try {
-            const [hit] = await detector.detect(video.current);
-            if (hit?.rawValue && /^\d{8,14}$/.test(hit.rawValue)) {
+            const hits = await detector.detect(video.current);
+            const code = hits.map((h) => (h.rawValue ? productCode(h.format, h.rawValue) : null)).find(Boolean);
+            if (code) {
               done.current = true;
               navigator.vibrate?.(40);
-              found.current(hit.rawValue);
+              found.current(code);
               return;
             }
           } catch {
@@ -83,7 +98,9 @@ export function BarcodeScanner({ onCode, onClose }: Props) {
     };
   }, []);
 
-  const manualOk = /^\d{8,14}$/.test(manual);
+  const manualOk = BARCODE_RE.test(manual);
+  // Сканер такой код не прочтёт — значит, опечатка. Искать всё равно можно: в базах бывают и такие.
+  const manualTypo = manualOk && !gtinCheckOk(manual);
 
   return (
     // Клавиатура ручного ввода ложится поверх экрана — поле поднимаем над ней (как BottomSheet).
@@ -107,12 +124,15 @@ export function BarcodeScanner({ onCode, onClose }: Props) {
         </p>
       </div>
 
+      {manualTypo && (
+        <p className="bg-black px-5 pt-3 text-[14px] text-warn">Не сходится последняя (контрольная) цифра — проверьте код.</p>
+      )}
       <form
         className="flex gap-2 bg-black px-5 pt-4 pb-[calc(16px+env(safe-area-inset-bottom))]"
         style={keyboard ? { paddingBottom: 12 } : undefined}
         onSubmit={(e) => {
           e.preventDefault();
-          if (manualOk) onCode(manual);
+          if (manualOk) onCode(canonicalBarcode(manual));
         }}
       >
         <input

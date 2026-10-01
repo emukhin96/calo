@@ -16,6 +16,7 @@ import { formatGrams } from "@/ui/grams";
 import { type IngredientFood, IngredientGramsSheet } from "@/ui/IngredientGramsSheet";
 import { fmtAmount } from "@/ui/nutrients";
 import { OwnFoodSheet } from "@/ui/OwnFoodSheet";
+import { barcodeNotFoundNote } from "@/lib/own-food";
 
 type Picked = IngredientFood & { foodId: string };
 type Row = Picked & { key: number; grams: number };
@@ -412,11 +413,7 @@ function IngredientSearch({
         onPick((await res.json()) as FoodResult, null);
       } else if (res?.status === 404) {
         setMsg(null);
-        onOwn(
-          "",
-          code,
-          `Товара ${code} нет в Open Food Facts (или там нет его КБЖУ) — перепишите КБЖУ с упаковки. В следующий раз он найдётся по штрихкоду.`,
-        );
+        onOwn("", code, barcodeNotFoundNote(code));
       } else if (res?.status === 400) {
         setMsg({ text: `${code} не похож на штрихкод — проверьте цифры.` });
       } else {

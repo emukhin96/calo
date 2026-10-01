@@ -12,6 +12,7 @@ import { BarcodeScanner } from "@/ui/BarcodeScanner";
 import { OwnFoodSheet } from "@/ui/OwnFoodSheet";
 import { PortionSheet } from "@/ui/PortionSheet";
 import { useKeyboardInset } from "@/ui/useKeyboardInset";
+import { barcodeNotFoundNote } from "@/lib/own-food";
 
 /** Сканер → поиск кода → лист порции; нет в OFF — «Свой продукт». */
 type Scan =
@@ -197,7 +198,7 @@ export function QuickAdd({
       {scan?.step === "own" && (
         <OwnFoodSheet
           initialBarcode={scan.code}
-          note={`Товара ${scan.code} нет в Open Food Facts или у него нет КБЖУ. Перепишите их с упаковки — в следующий раз товар найдётся сканером.`}
+          note={barcodeNotFoundNote(scan.code)}
           onSaved={(food) => setScan({ step: "portion", food })}
           onClose={close}
         />

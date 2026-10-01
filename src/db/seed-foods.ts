@@ -23,6 +23,8 @@ export type StapleFood = {
   aliases: string[];
   nutrients: NutrientVector;
   products: number; // по скольким товарам OFF взята медиана
+  /** Справочная запись OFF (код 99990…), если товаров для медианы мало. */
+  ref?: string;
 };
 
 const META_KEY = "foods_seed_hash";
