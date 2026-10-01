@@ -27,6 +27,8 @@
 
 ## Ручные операции
 
+Полная шпаргалка (восстановление из бэкапа, cron, iOS, справочник) — [docs/OPERATIONS.md](../docs/OPERATIONS.md).
+
 ```bash
 ssh calc 'cd /opt/calc && . deploy/vps/lib.sh && $COMPOSE ps'          # состояние
 ssh calc 'cd /opt/calc && . deploy/vps/lib.sh && $COMPOSE logs -f calc-web'
