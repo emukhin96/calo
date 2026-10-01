@@ -15,6 +15,7 @@ public class CaloNativePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "deleteFood", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "latestWeight", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setWidgetData", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearWidgetData", returnType: CAPPluginReturnPromise),
     ]
 
     private let store = HKHealthStore()
@@ -143,6 +144,13 @@ public class CaloNativePlugin: CAPPlugin, CAPBridgedPlugin {
            let dishes = try? JSONDecoder().decode([CaloShared.Dish].self, from: data) {
             CaloShared.save(dishes, key: "dishes")
         }
+        WidgetCenter.shared.reloadAllTimelines()
+        call.resolve()
+    }
+
+    /// Выход из аккаунта: виджет забывает токен, сводку и блюда — и показывает «войдите».
+    @objc func clearWidgetData(_ call: CAPPluginCall) {
+        CaloShared.clear()
         WidgetCenter.shared.reloadAllTimelines()
         call.resolve()
     }

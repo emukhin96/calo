@@ -10,9 +10,11 @@ import {
   type GoalKind,
   type Sex,
 } from "@/domain/norms";
+import { signOutAndClear } from "@/lib/sign-out";
 import { BottomBar, Button, Eyebrow } from "@/ui/components";
 import { NumberField, OptionCard, parseNum, Segmented } from "@/ui/form";
 import { formatInt } from "@/ui/format";
+import { AGE_YEARS, HEIGHT_CM, outOfRange, WEIGHT_KG } from "./ranges";
 
 const RATES = [
   { value: 0.25, label: "0,25 кг" },
@@ -27,6 +29,7 @@ const GOAL_HINT: Record<GoalKind, string> = {
 };
 
 const thisYear = new Date().getFullYear();
+const [minYear, maxYear] = [thisYear - AGE_YEARS[1], thisYear - AGE_YEARS[0]];
 const STEPS = ["Цель", "О себе", "Тело", "Активность", "Норма"];
 
 /** Онбординг: цель → пол и год → рост и вес → активность → «Ваша норма». */
@@ -42,6 +45,7 @@ export function Onboarding() {
   const [weight, setWeight] = useState("");
   const [activity, setActivity] = useState<Activity | null>(null);
   const [saving, setSaving] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState("");
   const paceRef = useRef<HTMLDivElement>(null);
 
@@ -62,13 +66,17 @@ export function Onboarding() {
   const h = parseNum(height);
   const w = parseNum(weight);
   const t = parseNum(target);
+  const inRange = (v: number | null, [min, max]: readonly [number, number]) => v != null && v >= min && v <= max;
   const valid = [
-    goal != null && (goal === "maintain" || t == null || (t >= 30 && t <= 300)),
-    sex != null && by != null && by >= thisYear - 100 && by <= thisYear - 18,
-    h != null && h >= 120 && h <= 230 && w != null && w >= 30 && w <= 300,
+    goal != null && (goal === "maintain" || t == null || inRange(t, WEIGHT_KG)),
+    sex != null && inRange(by, [minYear, maxYear]),
+    inRange(h, HEIGHT_CM) && inRange(w, WEIGHT_KG),
     activity != null,
     true,
   ];
+  // Почему «Дальше» не нажимается: иначе кнопка серая без объяснений.
+  const warn = (text: string) => <span className="text-warn">{text}</span>;
+  const kgRange = `от ${WEIGHT_KG[0]} до ${WEIGHT_KG[1]} кг`;
 
   const norms =
     goal && sex && by && h && w && activity
@@ -78,26 +86,45 @@ export function Onboarding() {
   async function finish() {
     setSaving(true);
     setError("");
-    const res = await fetch("/api/profile", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        sex,
-        birthYear: by,
-        heightCm: h,
-        activity,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        weightKg: w,
-        goal: { kind: goal, rateKgPerWeek: goal === "maintain" ? null : rate, targetWeightKg: goal === "maintain" ? null : t },
-      }),
-    });
-    if (!res.ok) {
-      setSaving(false);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sex,
+          birthYear: by,
+          heightCm: h,
+          activity,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          weightKg: w,
+          goal: { kind: goal, rateKgPerWeek: goal === "maintain" ? null : rate, targetWeightKg: goal === "maintain" ? null : t },
+        }),
+      });
+      if (res.ok) {
+        // «Сохраняю…» остаётся до перехода: повторное нажатие записало бы вес второй раз.
+        router.replace("/");
+        router.refresh();
+        return;
+      }
       setError("Не получилось сохранить. Проверьте значения.");
-      return;
+    } catch {
+      setError("Нет связи с сервером. Проверьте интернет и попробуйте снова.");
     }
-    router.replace("/");
-    router.refresh();
+    setSaving(false);
+  }
+
+  /** Вошли не с той почтой: до конца онбординга вкладок и настроек нет — выход здесь. */
+  async function signOut() {
+    setLeaving(true);
+    setError("");
+    try {
+      await signOutAndClear();
+      // Полная загрузка, а не router.replace: в памяти не остаётся ничего от этого входа.
+      location.replace("/login");
+    } catch {
+      setError("Не получилось выйти. Проверьте интернет и попробуйте снова.");
+      setLeaving(false);
+    }
   }
 
   return (
@@ -109,7 +136,9 @@ export function Onboarding() {
             ‹ Назад
           </button>
         ) : (
-          <span className="h-6" />
+          <button type="button" disabled={leaving} onClick={signOut} className="text-[16px] font-semibold text-ink-3 disabled:opacity-50">
+            Выйти
+          </button>
         )}
         <div className="ml-auto flex gap-1.5">
           {STEPS.map((s, i) => (
@@ -140,7 +169,14 @@ export function Onboarding() {
                   </p>
                   <Segmented value={rate} options={[...RATES]} onChange={setRate} />
                 </div>
-                <NumberField label="Целевой вес" unit="кг" value={target} onChange={setTarget} placeholder="необязательно" />
+                <NumberField
+                  label="Целевой вес"
+                  unit="кг"
+                  value={target}
+                  onChange={setTarget}
+                  placeholder="необязательно"
+                  hint={outOfRange(t, ...WEIGHT_KG) && warn(`Целевой вес — ${kgRange}.`)}
+                />
               </div>
             )}
           </>
@@ -159,7 +195,17 @@ export function Onboarding() {
                 ]}
                 onChange={setSex}
               />
-              <NumberField label="Год рождения" value={birthYear} onChange={setBirthYear} placeholder="1990" />
+              <NumberField
+                label="Год рождения"
+                value={birthYear}
+                onChange={setBirthYear}
+                placeholder="1990"
+                hint={
+                  by != null && by > maxYear
+                    ? warn(`Calo — для взрослых: нормы рассчитаны с ${AGE_YEARS[0]} лет.`)
+                    : outOfRange(by, minYear, maxYear) && warn(`Год рождения — не раньше ${minYear}.`)
+                }
+              />
             </div>
           </>
         )}
@@ -169,8 +215,22 @@ export function Onboarding() {
             <h1 className="font-display text-[30px] leading-tight font-extrabold">Рост и вес</h1>
             <p className="mt-2 text-[15px] text-ink-2">Вес можно обновлять в настройках — нормы пересчитаются.</p>
             <div className="mt-6 space-y-5">
-              <NumberField label="Рост" unit="см" value={height} onChange={setHeight} placeholder="175" />
-              <NumberField label="Текущий вес" unit="кг" value={weight} onChange={setWeight} placeholder="70" />
+              <NumberField
+                label="Рост"
+                unit="см"
+                value={height}
+                onChange={setHeight}
+                placeholder="175"
+                hint={outOfRange(h, ...HEIGHT_CM) && warn(`Рост — от ${HEIGHT_CM[0]} до ${HEIGHT_CM[1]} см.`)}
+              />
+              <NumberField
+                label="Текущий вес"
+                unit="кг"
+                value={weight}
+                onChange={setWeight}
+                placeholder="70"
+                hint={outOfRange(w, ...WEIGHT_KG) && warn(`Вес — ${kgRange}.`)}
+              />
             </div>
           </>
         )}

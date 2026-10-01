@@ -12,7 +12,7 @@ PWA на Next.js — работает в браузере и на iPhone («На
 
 ```bash
 pnpm install
-cp .env.example .env.local   # задайте BETTER_AUTH_SECRET и ALLOWED_EMAILS
+cp .env.example .env.local   # задайте BETTER_AUTH_SECRET (и OWNER_EMAILS — свой адрес)
 pnpm dev                     # http://localhost:3000
 ```
 

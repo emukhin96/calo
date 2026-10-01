@@ -1,3 +1,21 @@
+# Общий лог Caddy: сюда же пишутся ошибки запросов (http.log.error, например когда
+# calc-web лежит) с адресом и заголовками — фильтр сайта ниже их не касается.
+# Доступ-лог сайта сюда не попадает: у него свой логгер.
+{
+	log default {
+		output stdout
+		format filter {
+			wrap console
+			fields {
+				request>uri query {
+					replace token REDACTED
+				}
+				request>headers>Referer regexp "token=[^&]+" "token=REDACTED"
+			}
+		}
+	}
+}
+
 # HTTPS для calc.egor.am: сертификат Let's Encrypt Caddy выпускает и продлевает сам.
 calc.egor.am {
 	encode zstd gzip
@@ -6,8 +24,16 @@ calc.egor.am {
 	request_body {
 		max_size 20MB
 	}
+	# Входу хватает пары КБ JSON; вложенные лимиты не складываются — действует меньший.
+	request_body /api/auth/* {
+		max_size 64KB
+	}
 
-	reverse_proxy calc-web:3000
+	reverse_proxy calc-web:3000 {
+		# Плагин bearer отдаёт токен сессии (90 дней) в каждом ответе входа; клиенты его
+		# не читают (веб — cookie, приложение — GET /api/native/token), а лог писал его открытым.
+		header_down -Set-Auth-Token
+	}
 
 	header {
 		Strict-Transport-Security "max-age=31536000"
@@ -20,8 +46,20 @@ calc.egor.am {
 	@sw path /sw.js
 	header @sw Cache-Control "no-cache"
 
+	# Одноразовые токены из ссылок в письмах (magic-link/verify, delete-user/callback) — не в лог.
+	# Cookie и Authorization Caddy и так пишет как REDACTED.
 	log {
 		output stdout
-		format console
+		format filter {
+			wrap console
+			fields {
+				request>uri query {
+					replace token REDACTED
+				}
+				# Ссылка со страницы /delete-account?token=… уходит в Referer её же запросов.
+				request>headers>Referer regexp "token=[^&]+" "token=REDACTED"
+				resp_headers>Set-Auth-Token delete
+			}
+		}
 	}
 }
