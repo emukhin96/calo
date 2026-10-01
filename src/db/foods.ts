@@ -1,6 +1,7 @@
 // Доступ к справочнику продуктов. Функции принимают db параметром — тесты
 // гоняют их на PGlite в памяти (src/db/foods.test.ts).
 import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { barcodeVariants } from "@/domain/barcode";
 import type { NutrientVector } from "@/domain/nutrients";
 import { buildSearchText, type FoodState, type MatchKind, matchFood, parseQuery, stem, tokenPattern } from "@/domain/search";
 import type { DB } from ".";
@@ -66,9 +67,10 @@ export type SearchHints = {
  *    выше «паст|ернака», «сыр» выше «сыр|ка»;
  * 2) свои продукты; 3) вид не противоречит подсказке (сухие / варёные);
  * 4) то, что пользователь уже записывал в дневник;
- * 5) название или синоним ровно равен запросу; 6) название начинается с первого
- *    слова целиком; 7) вид совпал с подсказкой; 8) название начинается хотя бы с
- *    основы первого слова; 9) суммарное сходство; полнота данных (сколько
+ * 5) название или синоним ровно равен запросу; 6) без добавки «с X», которой нет в
+ *    запросе («Рис жареный с курицей» на «рис» — ниже риса); 7) название начинается
+ *    с первого слова целиком; 8) вид совпал с подсказкой; 9) название начинается хотя
+ *    бы с основы первого слова; 10) суммарное сходство; полнота данных (сколько
  *    нутриентов известно); короткие названия выше.
  * SQL отбирает POOL кандидатов грубо (целые слова — регуляркой), точный порядок — в JS.
  */
@@ -144,6 +146,8 @@ export async function searchFoods(
         flag(b.m.state >= 0) - flag(a.m.state >= 0) ||
         b.eaten - a.eaten ||
         flag(b.m.kind === "exact") - flag(a.m.kind === "exact") ||
+        // «Рис жареный с курицей» — после риса: просили продукт, а не блюдо с ним.
+        flag(a.m.withExtra) - flag(b.m.withExtra) ||
         flag(b.m.nameStart) - flag(a.m.nameStart) ||
         // Совпавший вид выбирает среди вариантов того же продукта, а не подменяет продукт:
         // «сосиски» (cooked) — сосиски, а не «Колбаса говяжья, жареная» с синонимом «сосиски».
@@ -252,8 +256,10 @@ export type OwnFoodCreate = {
 
 /**
  * Свой продукт «КБЖУ с упаковки» (source = manual). Со штрихкодом повторное
- * сохранение того же кода обновляет продукт, а не плодит копии; без штрихкода —
- * всегда новый продукт. Ищется поиском, как и справочник (search_text).
+ * сохранение того же кода обновляет продукт, а не плодит копии — в каком бы
+ * написании код ни сохранили раньше (UPC-A из 12 цифр и он же с нулём впереди —
+ * один товар, src/domain/barcode.ts); без штрихкода — всегда новый продукт.
+ * Ищется поиском, как и справочник (search_text).
  */
 export async function createOwnFood(db: DB, ownerId: string, input: OwnFoodCreate): Promise<FoodResult> {
   const nameRu = input.nameRu.trim();
@@ -267,15 +273,19 @@ export async function createOwnFood(db: DB, ownerId: string, input: OwnFoodCreat
     portionLabel: portion ? `порция ${String(Math.round(portion * 10) / 10).replace(".", ",")} г` : null,
     searchText: buildSearchText({ nameRu, brand }),
   };
-  const row = {
-    ...fields,
-    ownerId,
-    source: "manual" as const,
-    sourceRef: input.barcode ? ownBarcodeRef(ownerId, input.barcode) : null,
-    nameEn: null,
-    aliases: [],
-  };
-  const [saved] = row.sourceRef
+  const variants = input.barcode ? barcodeVariants(input.barcode) : [];
+  const sourceRef = variants.length ? ownBarcodeRef(ownerId, variants[0]) : null;
+  if (variants.length) {
+    // Тот же товар под другим написанием кода — обновляем его и переводим на ключ.
+    const [saved] = await db
+      .update(foods)
+      .set({ ...fields, sourceRef })
+      .where(and(eq(foods.ownerId, ownerId), eq(foods.source, "manual"), inArray(foods.sourceRef, variants.map((c) => ownBarcodeRef(ownerId, c)))))
+      .returning(resultColumns);
+    if (saved) return toResult(saved);
+  }
+  const row = { ...fields, ownerId, source: "manual" as const, sourceRef, nameEn: null, aliases: [] };
+  const [saved] = sourceRef
     ? await db
         .insert(foods)
         .values(row)
@@ -291,11 +301,46 @@ export async function createOwnFood(db: DB, ownerId: string, input: OwnFoodCreat
   return toResult(saved);
 }
 
-/** Свой продукт владельца с этим штрихкодом; чужие не видны. */
+/** Свой продукт владельца с этим штрихкодом (в любом написании кода); чужие не видны. */
 export async function findOwnFoodByBarcode(db: DB, ownerId: string, code: string): Promise<FoodResult | null> {
+  const refs = barcodeVariants(code).map((c) => ownBarcodeRef(ownerId, c));
+  if (refs.length === 0) return null;
   const [row] = await db
     .select(resultColumns)
     .from(foods)
-    .where(and(eq(foods.ownerId, ownerId), eq(foods.source, "manual"), eq(foods.sourceRef, ownBarcodeRef(ownerId, code))));
+    .where(and(eq(foods.ownerId, ownerId), eq(foods.source, "manual"), inArray(foods.sourceRef, refs)))
+    .limit(1);
   return row ? toResult(row) : null;
+}
+
+export type CachedOff = { id: string; sourceRef: string; nameRu: string; aliases: string[] };
+
+/** Товар Open Food Facts, сохранённый раньше под любым написанием этого кода. */
+export async function findOffFoodByBarcode(db: DB, code: string): Promise<CachedOff | null> {
+  const variants = barcodeVariants(code);
+  if (variants.length === 0) return null;
+  const [row] = await db
+    .select({ id: foods.id, sourceRef: foods.sourceRef, nameRu: foods.nameRu, aliases: foods.aliases })
+    .from(foods)
+    .where(and(eq(foods.source, "off"), isNull(foods.ownerId), inArray(foods.sourceRef, variants)))
+    .limit(1);
+  return row?.sourceRef ? { ...row, sourceRef: row.sourceRef } : null;
+}
+
+/**
+ * Русское название товара OFF (src/ai/translate-name.ts): прежнее название и
+ * синонимы остаются синонимами — товар ищется и так, и так. Только общий
+ * справочник и только source = off.
+ */
+export async function renameOffFood(db: DB, id: string, nameRu: string, extraAliases: string[]): Promise<void> {
+  const [row] = await db
+    .select({ nameRu: foods.nameRu, aliases: foods.aliases, brand: foods.brand, nameEn: foods.nameEn })
+    .from(foods)
+    .where(and(eq(foods.id, id), eq(foods.source, "off"), isNull(foods.ownerId)));
+  if (!row) return;
+  const aliases = [...new Set([row.nameRu, ...row.aliases, ...extraAliases].filter((a) => a && a !== nameRu))];
+  await db
+    .update(foods)
+    .set({ nameRu, aliases, searchText: buildSearchText({ nameRu, aliases, brand: row.brand, nameEn: row.nameEn }) })
+    .where(eq(foods.id, id));
 }

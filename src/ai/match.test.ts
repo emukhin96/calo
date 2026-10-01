@@ -2,6 +2,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DB } from "@/db";
 import { user } from "@/db/schema";
+import { saveTemplate } from "@/db/recipes";
 import { seedFoods } from "@/db/seed-foods";
 import { createTestDb } from "@/test/db";
 import { matchItems } from "./match";
@@ -97,5 +98,85 @@ describe("matchItems", () => {
     const [x] = await matchItems(db, OWNER, [{ name: "ъъъъъ", amount: { grams: 10 }, sourceText: "" }]);
     expect(x.candidates).toEqual([]);
     expect(x.grams).toBe(10);
+  });
+
+  // Аудит сценариев (Армения, Канада, блюда): похожее по одному слову или подстроке не
+  // становится продуктом позиции само — экран подтверждения выбирает только найденное.
+  it("нет в справочнике: только похожие, не найденные", async () => {
+    const items = await matchItems(
+      db,
+      OWNER,
+      [
+        { name: "сыр лори", nameEn: "lori cheese" }, // было: «Сыр бри» по слову «сыр»
+        { name: "матнакаш", nameEn: "armenian bread" },
+        { name: "гата", nameEn: "gata pastry" },
+        { name: "шелковица сушёная" }, // было: тофу
+      ].map((i) => ({ ...i, amount: { grams: 200 }, sourceText: i.name })),
+    );
+    for (const item of items) {
+      expect(item.candidates.every((c) => c.match === "partial"), item.name).toBe(true);
+    }
+  });
+
+  it("блюда и местные продукты находятся сами (FNDDS, справочные записи OFF)", async () => {
+    const cases: [string, RegExp][] = [
+      ["оливье", /^Салат Оливье/], // было: «Масло оливковое» 884 ккал
+      ["плов", /^Плов/], // было: мороженое
+      ["долма", /^Долма/], // было: виноградные листья по синониму «для долмы»
+      ["мацони", /^Мацони/], // было: мацовая мука
+      ["мацун", /^Мацони/], // было: шпинат комацуна
+      ["борщ", /^Борщ/], // было: хлеб Бородинский
+      ["шаурма", /шаурма|Гирос/i],
+      ["хачапури", /^Хачапури/],
+      ["сыр чечил", /^Сыр Чечил/],
+      ["суджук", /^Суджук/],
+      ["шелковица", /^Шелковица/],
+      ["курага", /^Абрикосы, сушёные$/],
+      ["лазанья", /^Лазанья/],
+      ["пицца", /^Пицца/], // было: пепперони (колбаса) по синониму «для пиццы»
+      ["kraft dinner", /Kraft Dinner/],
+    ];
+    const items = await matchItems(db, OWNER, cases.map(([name]) => ({ name, amount: { grams: 200 }, sourceText: name })));
+    items.forEach((item, i) => {
+      expect(item.candidates[0]?.match, item.name).not.toBe("partial");
+      expect(item.candidates[0]?.nameRu, item.name).toMatch(cases[i][1]);
+    });
+  });
+
+  it("найденное целыми словами — выбирается: ишхан, брынза, айран по «тан»", async () => {
+    const items = await matchItems(
+      db,
+      OWNER,
+      ["ишхан", "брынза", "тан", "кленовый сироп"].map((name) => ({ name, amount: { grams: 50 }, sourceText: name })),
+    );
+    for (const item of items) expect(item.candidates[0]?.match, item.name).not.toBe("partial");
+  });
+
+  it("блюдо с добавкой не подменяет продукт: «рис» — рис, а не «Рис жареный с курицей»", async () => {
+    const [rice, potato] = await matchItems(db, OWNER, [
+      { name: "рис", state: "cooked", amount: { grams: 150 }, sourceText: "" },
+      { name: "омлет", amount: { grams: 150 }, sourceText: "" },
+    ]);
+    expect(rice.candidates[0].nameRu).not.toMatch(/с курицей/);
+    expect(potato.candidates[0].nameRu).not.toMatch(/ с (сыром|помидорами)/);
+  });
+
+  it("штуки похожего продукта не переводятся в граммы его порцией", async () => {
+    const [x] = await matchItems(db, OWNER, [{ name: "сосиска в тесте", amount: { pieces: 2 }, sourceText: "" }]);
+    expect(x.candidates[0]?.match).toBe("partial");
+    expect(x.grams).toBeNull();
+  });
+
+  it("своё блюдо из «Блюд» — первым, раньше общего из справочника", async () => {
+    await saveTemplate(db, OWNER, { name: "Борщ мамин", per100g: { kcal: 65, protein: 3, fat: 3, carbs: 6 }, defaultPortionG: 350 });
+    const [borsch, soup] = await matchItems(db, OWNER, [
+      { name: "борщ", amount: { pieces: 1 }, sourceText: "тарелка борща" },
+      { name: "суп", amount: { grams: 300 }, sourceText: "" },
+    ]);
+    expect(borsch.candidates[0]).toMatchObject({ nameRu: "Борщ мамин", own: true });
+    expect(borsch.candidates[0].recipeId).toBeTruthy();
+    expect(borsch.grams).toBe(350); // одна порция своего блюда
+    expect(borsch.candidates.some((c) => c.nameRu === "Борщ с мясом")).toBe(true); // общий — следом
+    expect(soup.candidates.every((c) => !c.recipeId)).toBe(true); // «суп» — не «Борщ мамин»
   });
 });

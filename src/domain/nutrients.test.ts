@@ -71,4 +71,19 @@ describe("isLabelConsistent", () => {
   it("без БЖУ — не сходится", () => {
     expect(isLabelConsistent({ kcal: 100 })).toBe(false);
   });
+
+  it("Канада и США: углеводы вместе с клетчаткой — тоже сходится", () => {
+    // Brown lentils, Канада: углеводы 29 г, из них клетчатка 15 г
+    expect(isLabelConsistent({ kcal: 170, protein: 13, fat: 1, carbs: 29, fiber: 15 })).toBe(true);
+    // Fibre 1: 83 г углеводов, 13 г клетчатки, 333 ккал
+    expect(isLabelConsistent({ kcal: 333, protein: 7.4, fat: 2.8, carbs: 83.3, fiber: 13 })).toBe(true);
+    // клетчатки больше углеводов — опечатка, а не другой счёт
+    expect(isLabelConsistent({ kcal: 139, protein: 11.1, fat: 8.3, carbs: 0, fiber: 38.9 })).toBe(false);
+  });
+
+  it("спирт: коньяк и пиво", () => {
+    expect(isLabelConsistent({ kcal: 231, protein: 0, fat: 0, carbs: 0 }, 33)).toBe(true);
+    expect(isLabelConsistent({ kcal: 231, protein: 0, fat: 0, carbs: 0 })).toBe(false);
+    expect(isLabelConsistent({ kcal: 43, protein: 0.5, fat: 0, carbs: 3.6 }, 3.9)).toBe(true);
+  });
 });
