@@ -15,6 +15,7 @@ import { Eyebrow } from "@/ui/components";
 import { BarcodeScanner } from "@/ui/BarcodeScanner";
 import { OwnFoodSheet } from "@/ui/OwnFoodSheet";
 import { PortionSheet } from "@/ui/PortionSheet";
+import { barcodeNotFoundNote } from "@/lib/own-food";
 import { type AddTab, choiceMealName, type PreferredMeal } from "./add-flow";
 import { TextParse } from "./TextParse";
 
@@ -226,7 +227,7 @@ export function FoodSearch({
         setScanMsg(null);
         openRef.current({ kind: "food", food }, round1(food.defaultPortionG ?? 100));
       } else if (res?.status === 404) {
-        setScanMsg({ text: `Товара ${code} нет в Open Food Facts или у него нет КБЖУ.`, own: code });
+        setScanMsg({ text: barcodeNotFoundNote(code), own: code });
       } else if (res?.status === 400) {
         setScanMsg({ text: `${code} не похож на штрихкод — проверьте цифры.` });
       } else {
@@ -257,7 +258,10 @@ export function FoodSearch({
   /** Выбранный товар OFF — в справочник и в лист порции; source=off — без подмены своим продуктом. */
   async function pickOff(item: OffItem) {
     const res = await fetch(`/api/foods/barcode/${item.code}?source=off`).catch(() => null);
-    if (!res?.ok) return;
+    if (!res?.ok) {
+      setScanMsg({ text: "Не получилось загрузить этот товар из Open Food Facts — попробуйте ещё раз или выберите другой." });
+      return;
+    }
     const saved = (await res.json()) as FoodResult;
     setItems((prev) => [saved, ...prev.filter((f) => f.id !== saved.id)]);
     setOff((prev) => prev?.filter((o) => o.code !== item.code) ?? null);
@@ -421,16 +425,9 @@ export function FoodSearch({
           )}
           {scanMsg.own && (
             <>
-              <span> Перепишите КБЖУ с упаковки — в следующий раз товар найдётся по штрихкоду.</span>
               <button
                 type="button"
-                onClick={() =>
-                  setOwn({
-                    name: "",
-                    barcode: scanMsg.own!,
-                    note: `Товара ${scanMsg.own} нет в Open Food Facts (или там нет его КБЖУ) — перепишите КБЖУ с упаковки.`,
-                  })
-                }
+                onClick={() => setOwn({ name: "", barcode: scanMsg.own!, note: barcodeNotFoundNote(scanMsg.own!) })}
                 className="mt-3 flex h-12 w-full items-center justify-center rounded-[var(--radius-button)] bg-accent text-[16px] font-bold text-white active:bg-accent-press"
               >
                 Внести КБЖУ с упаковки
