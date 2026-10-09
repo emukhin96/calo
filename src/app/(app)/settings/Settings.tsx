@@ -1,18 +1,19 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { GoalInput, ProfileInput } from "@/db/profile";
 import type { MealPlanItem } from "@/domain/meals";
 import { ACTIVITY_RU, type Activity, GOAL_RU, type GoalKind, type Norms, type Sex } from "@/domain/norms";
 import { NUTRIENT_KEYS, type NutrientKey } from "@/domain/nutrients";
-import { authClient } from "@/lib/auth-client";
 import { Button, Eyebrow, SectionTitle } from "@/ui/components";
 import { NumberField, OptionCard, parseNum, Segmented } from "@/ui/form";
 import { formatInt } from "@/ui/format";
 import { fmtAmount, NUTRIENT_LABELS, unitRu } from "@/ui/nutrients";
 import { HealthToggle } from "@/ui/HealthToggle";
 import { PushToggle } from "@/ui/PushToggle";
+import { AccountSection } from "./AccountSection";
 import { MealPlanSection } from "./MealPlanSection";
 
 type Weight = { id: string; kg: number; at: string };
@@ -78,11 +79,6 @@ export function Settings(p: Props) {
     setSaving(false);
     setMessage(res.ok ? "Сохранено, нормы пересчитаны" : "Не получилось сохранить — проверьте значения");
     if (res.ok) router.refresh();
-  }
-
-  async function signOut() {
-    await authClient.signOut();
-    router.replace("/login");
   }
 
   return (
@@ -173,13 +169,11 @@ export function Settings(p: Props) {
         Скачать дневник (CSV) →
       </a>
       <p className="mt-1 text-[13px] text-ink-3">Все записи с КБЖУ и витаминами — открывается в Excel и Numbers.</p>
+      <Link href="/privacy" className="mt-4 block text-[16px] font-semibold text-accent">
+        Как мы храним данные →
+      </Link>
 
-      <SectionTitle>Аккаунт</SectionTitle>
-      <p className="text-[15px] text-ink-2 wrap-anywhere">{p.email}</p>
-      <p className="mt-1 text-[14px] text-ink-3 wrap-anywhere">Часовой пояс: {p.profile.timezone}</p>
-      <button type="button" onClick={signOut} className="mt-4 text-[16px] font-semibold text-warn">
-        Выйти
-      </button>
+      <AccountSection email={p.email} timezone={p.profile.timezone} />
     </main>
   );
 }

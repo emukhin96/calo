@@ -2,11 +2,12 @@ import { z } from "zod";
 import { AiError, aiEnabled, generateJson } from "@/ai/gemini";
 import { matchItems, type ParsedItem } from "@/ai/match";
 import { parseFoodText } from "@/ai/parse-text";
-import { takeAiRequest } from "@/ai/usage";
+import { takeAiRequest, takeGlobalAiRequest } from "@/ai/usage";
 import { db } from "@/db";
 import { todayIn } from "@/domain/day";
 import { fastParse } from "@/domain/parse";
 import { apiSession } from "@/lib/api";
+import { isOwnerEmail } from "@/lib/env";
 import { userTimeZone } from "@/lib/tz";
 
 const Body = z.object({ text: z.string().trim().min(1).max(1000) });
@@ -43,6 +44,10 @@ export async function POST(req: Request) {
   const tz = await userTimeZone(ownerId);
   if (!(await takeAiRequest(db, ownerId, todayIn(tz)))) {
     return Response.json({ error: "Дневной лимит запросов к ИИ исчерпан — добавьте продукты поиском." }, { status: 429 });
+  }
+  // Владельца общий лимит не касается: ключ Gemini его.
+  if (!isOwnerEmail(session.user.email) && !(await takeGlobalAiRequest(db))) {
+    return Response.json({ error: "ИИ на сегодня перегружен — добавьте продукты поиском." }, { status: 429 });
   }
 
   try {

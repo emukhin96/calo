@@ -89,7 +89,8 @@ for _ in $(seq 1 30); do
   [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$SITE/api/health")" = 200 ] && break
   sleep 2
 done
-OWNER="$(ssh calc "grep -E '^ALLOWED_EMAILS=' /opt/calc/.env | cut -d= -f2 | cut -d, -f1 | tr -d ' \"'")"
+OWNER="$(ssh calc "grep -E '^OWNER_EMAILS=' /opt/calc/.env | cut -d= -f2 | cut -d, -f1 | tr -d ' \"'")"
+[ -n "$OWNER" ] || OWNER="$(ssh calc "grep -E '^ALLOWED_EMAILS=' /opt/calc/.env | cut -d= -f2 | cut -d, -f1 | tr -d ' \"'")"
 if [ -z "$OWNER" ]; then
   echo "Почта настроена. Проверьте вход по ссылке на $SITE/login."
   finish 0

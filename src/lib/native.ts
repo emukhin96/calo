@@ -26,6 +26,7 @@ interface CaloNativePlugin {
   deleteFood(opts: { id: string }): Promise<void>;
   latestWeight(): Promise<{ weight: { kg: number; measuredAt: string; uuid: string } | null }>;
   setWidgetData(data: { baseURL?: string; token?: string; summary?: WidgetSummary; dishes?: WidgetDish[] }): Promise<void>;
+  clearWidgetData(): Promise<void>;
 }
 
 const CaloNative = registerPlugin<CaloNativePlugin>("CaloNative");
@@ -40,6 +41,7 @@ const HEALTH_KEY = "calo:health:enabled";
 const HEALTH_EVENT = "calo:health";
 const SYNCED_KEY = "calo:health:synced"; // id записи → отпечаток, уже записанный в Health
 const WEIGHT_KEY = "calo:health:weight"; // uuid последнего импортированного взвешивания
+const HEALTH_OWNER_KEY = "calo:health:owner"; // id аккаунта, для которого всё это настроено
 
 function local<T>(key: string, fallback: T): T {
   try {
@@ -96,6 +98,25 @@ const fingerprint = (n: NutrientVector, at: string) => `${at}|${Math.round((n.kc
 type ApiEntry = { id: string; title: string; eatenAt: string; nutrients: NutrientVector };
 
 /**
+ * «Здоровье» настроено для одного аккаунта. Вошёл другой, а прошлый не выходил
+ * кнопкой «Выйти» (её уборка стирает и эти ключи) — выключаем: иначе вес из Health
+ * этого телефона ушёл бы в чужой аккаунт, а записи прошлого удалились бы из Health
+ * как «удалённые в дневнике». Подключить заново — в Профиле.
+ */
+function keepHealthForOwner(userId: string) {
+  const owner = local<string | null>(HEALTH_OWNER_KEY, null);
+  if (owner && owner !== userId) {
+    for (const key of [HEALTH_KEY, SYNCED_KEY, WEIGHT_KEY]) {
+      try {
+        localStorage.removeItem(key);
+      } catch {}
+    }
+    window.dispatchEvent(new Event(HEALTH_EVENT));
+  }
+  setLocal(HEALTH_OWNER_KEY, userId);
+}
+
+/**
  * Синхронизация при открытии приложения и после изменений:
  * 1) виджет — токен, сводка дня, частые блюда;
  * 2) Health — новые/изменённые записи за сегодня и вчера (записанные
@@ -107,11 +128,12 @@ export async function syncNative(): Promise<void> {
   const get = (url: string) => fetch(url, { cache: "no-store" }).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
   try {
-    const [{ token }, summary, recipes] = await Promise.all([
+    const [{ token, userId }, summary, recipes] = await Promise.all([
       get("/api/native/token"),
       get("/api/summary/day"),
       get("/api/recipes"),
     ]);
+    keepHealthForOwner(userId);
     const dishes: WidgetDish[] = (recipes.items as { id: string; name: string; defaultPortionG: number | null; nutrientsPer100g: NutrientVector }[])
       .slice(0, 4)
       .map((r) => {
@@ -155,11 +177,34 @@ export async function syncNative(): Promise<void> {
   } catch {}
 }
 
+/**
+ * Выход из аккаунта (lib/sign-out): виджет забывает токен, сводку и блюда прошлого
+ * пользователя. Ключи calo:health:* к этому моменту уже стёрты вместе с остальным
+ * localStorage — сообщаем подписчикам, что «Здоровье» выключено.
+ */
+export async function clearNativeState(): Promise<void> {
+  window.dispatchEvent(new Event(HEALTH_EVENT));
+  if (!isNative()) return;
+  // В сборке приложения без этого метода промис отклонится (UNIMPLEMENTED) — не страшно:
+  // токен виджета — это токен сессии, и он погас вместе с ней.
+  await CaloNative.clearWidgetData().catch(() => {});
+}
+
 // ─── Хуки для интерфейса: на сервере — false, в браузере — реальное значение ───
 
 const noop = () => () => {};
 /** true внутри iOS-приложения. */
 export const useIsNative = () => useSyncExternalStore(noop, isNative, () => false);
+
+const isInstalledApp = () =>
+  isNative() ||
+  window.matchMedia("(display-mode: standalone)").matches ||
+  (navigator as Navigator & { standalone?: boolean }).standalone === true;
+/**
+ * true в iOS-приложении и в Calo с экрана «Домой»: ссылка из письма там откроется
+ * в Safari — с другими cookie и localStorage, — и сюда её надо вставлять руками.
+ */
+export const useIsInstalledApp = () => useSyncExternalStore(noop, isInstalledApp, () => false);
 
 const onHealth = (cb: () => void) => {
   window.addEventListener(HEALTH_EVENT, cb);

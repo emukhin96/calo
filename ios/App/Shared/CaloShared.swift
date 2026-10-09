@@ -41,6 +41,13 @@ enum CaloShared {
         return try? JSONDecoder().decode(type, from: data)
     }
 
+    /// Выход из аккаунта: следующему пользователю устройства — ничего от прошлого.
+    static func clear() {
+        for key in ["config", "summary", "dishes"] {
+            defaults?.removeObject(forKey: key)
+        }
+    }
+
     static var config: Config? { load(Config.self, key: "config") }
     static var summary: Summary? { load(Summary.self, key: "summary") }
     static var dishes: [Dish] { load([Dish].self, key: "dishes") ?? [] }

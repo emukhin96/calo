@@ -12,6 +12,8 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Всё, кроме входа, API, статики, иконок, манифеста, service worker и распознавателя штрихкодов.
-  matcher: ["/((?!login|api|_next/static|_next/image|pwa-icon|icon|apple-icon|manifest.webmanifest|sw.js|wasm/).*)"],
+  // Всё, кроме входа, страницы о данных (её читают до входа), подтверждения удаления
+  // (ссылку из письма открывают и там, где не входили), API, статики, иконок,
+  // манифеста, service worker и распознавателя штрихкодов.
+  matcher: ["/((?!login|privacy|delete-account|api|_next/static|_next/image|pwa-icon|icon|apple-icon|manifest.webmanifest|sw.js|wasm/).*)"],
 };
