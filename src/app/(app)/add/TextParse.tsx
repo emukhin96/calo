@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
-import type { ParsedItem } from "@/ai/match";
+import type { Candidate, ParsedItem } from "@/ai/match";
 import type { ParseTextResponse } from "@/app/api/parse/text/route";
 import type { FoodResult } from "@/db/foods";
 import { amountToGrams } from "@/domain/amount";
@@ -152,7 +152,8 @@ export function TextParse({
         data.items.map((it, i) => ({
           ...it,
           key: `${i}-${it.name}`,
-          foodId: it.candidates[0]?.id ?? null,
+          // Похожий не всеми словами («оливье» → «Масло оливковое») сам не выбирается: только по нажатию.
+          foodId: it.candidates[0] && it.candidates[0].match !== "partial" ? it.candidates[0].id : null,
           grams: okGrams(it.grams) ? it.grams : null,
           gramsSet: false,
           skip: false,
@@ -214,7 +215,7 @@ export function TextParse({
     setPicking(null);
   }
 
-  const food = (r: Row): FoodResult | null => r.candidates.find((c) => c.id === r.foodId) ?? null;
+  const food = (r: Row): Candidate | null => r.candidates.find((c) => c.id === r.foodId) ?? null;
   const ready = rows?.filter((r) => !r.skip && food(r) && okGrams(r.grams)) ?? [];
   const unmatched = rows?.filter((r) => !r.skip && !food(r)) ?? [];
   const noGrams = rows?.filter((r) => !r.skip && food(r) && !okGrams(r.grams)) ?? [];
@@ -222,8 +223,9 @@ export function TextParse({
   // «Одним блюдом»: вес записи — всё блюдо; название по умолчанию — из текста до двоеточия или первых позиций.
   const dishGrams = round1(ready.reduce((g, r) => g + r.grams!, 0));
   const dish = (dishName ?? defaultDishName(text, (ready.length ? ready : (rows ?? [])).map((r) => r.name))).trim();
-  const dishProblem =
-    dishGrams > ENTRY_MAX_GRAMS
+  const dishProblem = ready.some((r) => food(r)?.recipeId)
+    ? "Своё блюдо не положить в другое блюдо — добавьте позиции отдельно."
+    : dishGrams > ENTRY_MAX_GRAMS
       ? `Блюдо тяжелее ${formatInt(ENTRY_MAX_GRAMS / 1000)} кг одной записью не добавить — добавьте продукты отдельно.`
       : ready.length > DISH_MAX_INGREDIENTS
         ? `В блюде может быть до ${DISH_MAX_INGREDIENTS} продуктов — добавьте отдельно.`
@@ -261,7 +263,8 @@ export function TextParse({
     try {
       for (const r of ready) {
         const f = food(r)!;
-        const sent = await postEntry({ foodId: f.id, grams: r.grams!, date, ...rowMealBody(choice, first) }, f.nameRu);
+        const what = f.recipeId ? { recipeId: f.recipeId } : { foodId: f.id };
+        const sent = await postEntry({ ...what, grams: r.grams!, date, ...rowMealBody(choice, first) }, f.nameRu);
         if (sent === "queued") queued = true;
         // Новый приём создала первая позиция — его id; ушла в очередь — неизвестен (null).
         if (choice.kind === "new" && first === undefined) first = sent === "queued" ? null : sent.mealId;
@@ -415,6 +418,9 @@ export function TextParse({
 
               {!r.skip && (
                 <>
+                  {r.candidates.length > 0 && !f && (
+                    <p className="mt-2 text-[14px] text-ink-2">Точно в справочнике нет — похожие:</p>
+                  )}
                   {r.candidates.length > 0 ? (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {r.candidates.map((c) => (
@@ -428,6 +434,7 @@ export function TextParse({
                         >
                           {c.nameRu}
                           {c.brand ? ` · ${c.brand}` : ""}
+                          {c.recipeId ? " · моё блюдо" : ""}
                         </button>
                       ))}
                       <button

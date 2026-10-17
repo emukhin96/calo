@@ -182,6 +182,11 @@ export type FoodMatch = {
   nameStart: boolean;
   /** Название начинается с основы первого слова — для недопечатанного слова («парм»). */
   prefixStart: boolean;
+  /**
+   * В названии «с X», а X в запросе нет: «Рис жареный с курицей» на запрос «рис»
+   * — уже блюдо, а не рис. Такие — после продукта без добавок.
+   */
+  withExtra: boolean;
   /** Вид совпал с запросом +1, противоположный −1, неизвестен или не задан 0. */
   state: -1 | 0 | 1;
 };
@@ -208,8 +213,21 @@ function phrases(f: Matchable): string[][] {
 const sameWords = (a: string[], b: string[]) =>
   a.length === b.length && a.every((x) => b.some((y) => sameWord(x, y))) && b.every((y) => a.some((x) => sameWord(x, y)));
 
+/**
+ * Слова текста без цели «для X»: «Основа для пирога» — не пирог, «Виноградные
+ * листья» с синонимом «для долмы» — не долма, «Соус для пиццы» — не пицца. Иначе
+ * на название блюда разбор текста ставил ингредиент как найденный целиком.
+ * Если «для» есть в самом запросе («соус для пиццы»), слова считаются все.
+ */
+function ownWords(texts: (string | null | undefined)[], keepPurpose: boolean): string[] {
+  return texts.flatMap((t) => {
+    const ws = words(t ?? "");
+    return keepPurpose ? ws : ws.filter((_, i) => ws[i - 1] !== "для");
+  });
+}
+
 export function matchFood(q: SearchQuery, f: Matchable): FoodMatch {
-  const all = words([f.nameRu, ...(f.aliases ?? []), f.brand ?? "", f.nameEn ?? ""].join(" "));
+  const all = ownWords([f.nameRu, ...(f.aliases ?? []), f.brand, f.nameEn], q.tokens.includes("для"));
   const whole = q.tokens.filter((t) => all.some((w) => sameWord(t, w))).length;
   // Слова о виде в запросе («сухой пасты») не мешают равенству с синонимом «паста». Без них в
   // запросе «сырая»/«варёная» в названии — тоже не помеха: «Морковь сырая» = «морковь», иначе её
@@ -222,8 +240,12 @@ export function matchFood(q: SearchQuery, f: Matchable): FoodMatch {
   const name = words(f.nameRu);
   const first = q.tokens[0] ?? "";
   const state = q.state ? foodState(f.nameRu, f.nameEn) : null;
+  // «Паста с курицей в сливочном соусе»: слово после «с»/«со» до запятой — добавка.
+  const main = words(f.nameRu.replace(/\([^)]*\)/g, " ").split(",")[0]);
+  const withExtra = main.some((w, i) => i > 0 && (main[i - 1] === "с" || main[i - 1] === "со") && !q.tokens.some((t) => sameWord(t, w)));
   return {
     whole,
+    withExtra,
     kind: whole < q.tokens.length ? "partial" : exact ? "exact" : "words",
     nameStart: name.length > 0 && sameWord(first, name[0]),
     prefixStart: first !== "" && name.join(" ").startsWith(stem(first)),
