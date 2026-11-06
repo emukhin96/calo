@@ -1,6 +1,9 @@
 // Свой продукт «КБЖУ с упаковки»: границы значений и проверка формы. Одни и те
 // же правила у формы (подсказки под полями) и у POST /api/foods.
+import { BARCODE_RE, gtinCheckOk, isInStoreCode } from "@/domain/barcode";
 import { isLabelConsistent } from "@/domain/nutrients";
+
+export { BARCODE_RE };
 
 export const OWN_FOOD_LIMITS = {
   name: 120,
@@ -11,8 +14,6 @@ export const OWN_FOOD_LIMITS = {
   macroSum: 105,
   portion: 5000,
 } as const;
-
-export const BARCODE_RE = /^\d{8,14}$/;
 
 export type OwnFoodInput = {
   nameRu: string;
@@ -36,6 +37,8 @@ export function ownFoodErrors(f: OwnFoodInput): Partial<Record<OwnFoodField, str
   else if (name.length > L.name) e.nameRu = `Не длиннее ${L.name} символов`;
   if ((f.brand?.trim().length ?? 0) > L.brand) e.brand = `Не длиннее ${L.brand} символов`;
   if (f.barcode && !BARCODE_RE.test(f.barcode)) e.barcode = "От 8 до 14 цифр";
+  // Сканер такой код не прочтёт: опечатка — и товар потом не найдётся по штрихкоду.
+  else if (f.barcode && !gtinCheckOk(f.barcode)) e.barcode = "Не сходится последняя (контрольная) цифра — проверьте код";
 
   const { kcal, protein, fat, carbs } = f.per100g;
   if (!ok(kcal, L.kcal)) e.kcal = Number.isFinite(kcal) ? `От 0 до ${L.kcal}` : "Нужно число";
@@ -60,4 +63,35 @@ export function kcalMismatch(per100g: OwnFoodInput["per100g"]): number | null {
   if (![kcal, protein, fat, carbs].every(Number.isFinite)) return null;
   if (isLabelConsistent({ kcal, protein, fat, carbs })) return null;
   return Math.round(4 * protein + 9 * fat + 4 * carbs);
+}
+
+/**
+ * Пояснение над формой своего продукта, когда штрихкода нет в базах. Внутренний
+ * код магазина (весовой сыр, выпечка) — отдельный случай: у следующей упаковки
+ * код будет другим, сканер его потом не найдёт.
+ */
+export function barcodeNotFoundNote(code: string): string {
+  return isInStoreCode(code)
+    ? `${code} — внутренний код магазина (весовой товар): в базах товаров его нет, а у другой упаковки он будет другим. Перепишите КБЖУ с этикетки или найдите продукт поиском.`
+    : `Товара ${code} нет в Open Food Facts или у него нет КБЖУ. Перепишите их с упаковки — в следующий раз товар найдётся сканером.`;
+}
+
+export type LabelBasis = "100g" | "serving";
+
+/**
+ * Значения с этикетки «на порцию» → на 100 г. В Канаде и США таблица всегда на
+ * порцию («Per 1 cup (250 mL)», «pour 2 biscuits (22 g)»); миллилитры считаем
+ * граммами. Округление — до 0,1, как пишут на этикетках. NaN остаётся NaN
+ * («не заполнено»), порция не больше нуля — тоже NaN.
+ */
+export function per100FromServing(perServing: OwnFoodInput["per100g"], servingG: number): OwnFoodInput["per100g"] {
+  const k = Number.isFinite(servingG) && servingG > 0 ? 100 / servingG : NaN;
+  const conv = (x: number) => Math.round(x * k * 10) / 10;
+  return { kcal: conv(perServing.kcal), protein: conv(perServing.protein), fat: conv(perServing.fat), carbs: conv(perServing.carbs) };
+}
+
+/** Порция с этикетки: от 1 г до OWN_FOOD_LIMITS.portion. */
+export function servingError(servingG: number): string | undefined {
+  if (!Number.isFinite(servingG)) return "Нужен вес порции с этикетки";
+  return servingG >= 1 && servingG <= OWN_FOOD_LIMITS.portion ? undefined : `От 1 до ${OWN_FOOD_LIMITS.portion} г`;
 }

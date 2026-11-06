@@ -84,13 +84,20 @@ export function coverage(vectors: NutrientVector[], key: NutrientKey): number {
 }
 
 /**
- * Сходится ли этикетка: 4·Б + 9·Ж + 4·У (+ 2·клетчатка) ≈ ккал. Отсекает опечатки
- * в Open Food Facts вроде «белок 0,1 г» у макарон. Допуск ±20% (не меньше 20 ккал):
- * полиолы, спирт и округления на этикетке дают расхождение.
+ * Сходится ли этикетка: 4·Б + 9·Ж + 4·У (+ 2·клетчатка + 7·спирт) ≈ ккал.
+ * Отсекает опечатки в Open Food Facts вроде «белок 0,1 г» у макарон. Допуск ±20%
+ * (не меньше 20 ккал): полиолы и округления на этикетке дают расхождение.
+ * Углеводы на этикетках Канады и США — вместе с клетчаткой (у нас и в ЕС — без
+ * неё), поэтому сходится и любой из двух счётов: у чечевицы «углеводы 29, из них
+ * клетчатка 15» — не опечатка. alcohol — граммы спирта на 100 г (коньяк, пиво):
+ * без него у напитка 0 г БЖУ при 230 ккал.
  */
-export function isLabelConsistent(n: NutrientVector): boolean {
+export function isLabelConsistent(n: NutrientVector, alcohol = 0): boolean {
   const { kcal, protein, fat, carbs, fiber } = n;
   if (kcal == null || protein == null || fat == null || carbs == null) return false;
-  const estimate = 4 * protein + 9 * fat + 4 * carbs + 2 * (fiber ?? 0);
-  return Math.abs(estimate - kcal) <= Math.max(20, 0.2 * kcal);
+  const base = 4 * protein + 9 * fat + 7 * alcohol;
+  const fib = fiber ?? 0;
+  const tolerance = Math.max(20, 0.2 * kcal);
+  const near = (estimate: number) => Math.abs(estimate - kcal) <= tolerance;
+  return near(base + 4 * carbs + 2 * fib) || (fib > 0 && fib <= carbs && near(base + 4 * (carbs - fib) + 2 * fib));
 }
