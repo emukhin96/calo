@@ -63,3 +63,27 @@ calc.egor.am {
 		}
 	}
 }
+
+# Посредник Telegram для сторожа chgkmsu.ru (чужой проект на этом же сервере): Yandex Cloud не достаёт до
+# api.telegram.org, поэтому сторож шлёт тревоги сюда. Контейнер chgkmsu-tg-relay ставится отдельно, из
+# репозитория chgkmsu-registration (reserve-function/tg_relay/deploy_relay.sh) в /opt/chgkmsu-tg-relay, и
+# подключён к сети calc_default. Наружу — только POST /alert и GET /health; остальное — 404.
+tg.chgkmsu.ru {
+	@relay {
+		method POST GET
+		path /alert /health
+	}
+	handle @relay {
+		request_body {
+			max_size 16KB
+		}
+		reverse_proxy chgkmsu-tg-relay:8080
+	}
+	handle {
+		respond 404
+	}
+	header -Server
+	log {
+		output discard
+	}
+}
